@@ -4,7 +4,6 @@ from gtts import gTTS
 import os
 import json
 import io
-import time
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
@@ -32,35 +31,22 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect password.")
         st.stop()
 
-# --- 2. INTELLIGENT MODEL CONNECTOR ---
-@st.cache_resource
-def get_working_model():
-    # We try the Experimental model too, since that worked for you before!
-    candidates = [
-        "gemini-1.5-flash",
-        "models/gemini-1.5-flash",
-        "gemini-2.0-flash-exp", 
-        "gemini-1.5-flash-001"
-    ]
-    
-    status_box = st.empty()
-    
-    for name in candidates:
-        try:
-            status_box.caption(f"🔌 Testing connection to: {name}...")
-            model = genai.GenerativeModel(name)
-            model.generate_content("Hi") # Test ping
-            status_box.empty()
-            return model, name
-        except Exception:
-            continue
-            
-    status_box.error("❌ Connection failed. Please wait 5 minutes for your new API Key to activate.")
-    return None, None
+# --- SIDEBAR DIAGNOSTICS (Check if library updated) ---
+with st.sidebar:
+    st.header("🔧 Diagnostics")
+    st.write(f"**Library Version:** `{genai.__version__}`")
+    st.info("ℹ️ Version must be **0.8.3** or higher to work.")
 
-model, model_name = get_working_model()
-
-if not model:
+# --- 2. DIRECT CONNECTION (No hiding errors) ---
+# We try to connect to the standard model and show the REAL error if it fails.
+try:
+    model_name = "gemini-1.5-flash"
+    model = genai.GenerativeModel(model_name)
+    # Test ping
+    model.generate_content("Hi")
+except Exception as e:
+    st.error(f"❌ **Connection Error:** {e}")
+    st.error("This is the exact error from Google. Please share this.")
     st.stop()
 
 # --- 3. SESSION STATE ---
@@ -100,7 +86,7 @@ def transcribe_audio(audio_bytes):
         ])
         return response.text.strip()
     except Exception as e:
-        st.error(f"Transcription Error ({model_name}): {e}")
+        st.error(f"Transcription Error: {e}")
         return None
 
 def get_teacher_response(user_text, scenario_key):
@@ -150,7 +136,6 @@ def text_to_speech_free(text):
 
 # --- 6. MAIN UI ---
 st.title("🩺 CareLingo")
-# st.caption(f"Connected to: {model_name}") # Uncomment to see which model worked
 
 if not st.session_state.scenario:
     st.info("👈 Select a scenario to start.")
