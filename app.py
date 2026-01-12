@@ -32,33 +32,33 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect password.")
         st.stop()
 
-# --- 2. CONNECTION TESTER (NO CACHE) ---
+# --- 2. INTELLIGENT MODEL CONNECTOR ---
+@st.cache_resource
 def get_working_model():
-    status_text = st.empty()
-    
-    # We try these 3 models in order.
+    # We try the Experimental model too, since that worked for you before!
     candidates = [
         "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-2.0-flash-exp" # The experimental one that worked before
+        "models/gemini-1.5-flash",
+        "gemini-2.0-flash-exp", 
+        "gemini-1.5-flash-001"
     ]
+    
+    status_box = st.empty()
     
     for name in candidates:
         try:
-            status_text.text(f"🔌 Trying to connect to {name}...")
+            status_box.caption(f"🔌 Testing connection to: {name}...")
             model = genai.GenerativeModel(name)
-            # Test the connection
-            model.generate_content("Hi")
-            status_text.empty() # Clear the message if successful
-            return model
-        except Exception as e:
-            print(f"Failed {name}: {e}") # Log to console
+            model.generate_content("Hi") # Test ping
+            status_box.empty()
+            return model, name
+        except Exception:
             continue
             
-    status_text.error("❌ All models failed. Your API Key may be invalid or new keys might need 5 mins to activate.")
-    return None
+    status_box.error("❌ Connection failed. Please wait 5 minutes for your new API Key to activate.")
+    return None, None
 
-model = get_working_model()
+model, model_name = get_working_model()
 
 if not model:
     st.stop()
@@ -100,7 +100,7 @@ def transcribe_audio(audio_bytes):
         ])
         return response.text.strip()
     except Exception as e:
-        st.error(f"Transcription Error: {e}")
+        st.error(f"Transcription Error ({model_name}): {e}")
         return None
 
 def get_teacher_response(user_text, scenario_key):
@@ -150,6 +150,7 @@ def text_to_speech_free(text):
 
 # --- 6. MAIN UI ---
 st.title("🩺 CareLingo")
+# st.caption(f"Connected to: {model_name}") # Uncomment to see which model worked
 
 if not st.session_state.scenario:
     st.info("👈 Select a scenario to start.")
