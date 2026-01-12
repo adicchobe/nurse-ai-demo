@@ -31,18 +31,33 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect password.")
         st.stop()
 
-# --- FORCE MODEL SELECTION ---
+# --- SMART MODEL SELECTOR (The Fix) ---
+# We ask the API what models it has, and pick the best stable Flash version.
 try:
-    model = genai.GenerativeModel('gemini-1.5-flash-001')
-except Exception as e:
-    st.error(f"Model Error: {e}")
+    available_models = [m.name for m in genai.list_models()]
+    
+    # Priority 1: Specific Stable 1.5 Flash (Most reliable)
+    if "models/gemini-1.5-flash-001" in available_models:
+        model_name = "models/gemini-1.5-flash-001"
+    # Priority 2: Generic 1.5 Flash
+    elif "models/gemini-1.5-flash" in available_models:
+        model_name = "models/gemini-1.5-flash"
+    # Priority 3: Any Flash model (Fallback)
+    else:
+        flash_models = [m for m in available_models if "flash" in m and "exp" not in m]
+        model_name = flash_models[0] if flash_models else "models/gemini-1.5-flash"
 
-# Session State & Counters
+    model = genai.GenerativeModel(model_name)
+    # st.toast(f"Connected to: {model_name}") # Uncomment to see which one it picked
+except Exception as e:
+    st.error(f"Error finding model: {e}")
+    model = genai.GenerativeModel("models/gemini-1.5-flash") # Ultimate fallback
+
+# --- SESSION STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "scenario" not in st.session_state: st.session_state.scenario = None
 if "feedback" not in st.session_state: st.session_state.feedback = None
 if "last_audio_id" not in st.session_state: st.session_state.last_audio_id = None
-# NEW: Counter for safety
 if "recording_count" not in st.session_state: st.session_state.recording_count = 0
 MAX_RECORDINGS = 10
 
@@ -75,7 +90,7 @@ def transcribe_audio_with_gemini(audio_bytes):
         ])
         return response.text.strip()
     except Exception as e:
-        st.error(f"Transcription Error: {e}")
+        st.error(f"Transcription Error with {model_name}: {e}")
         return None
 
 def get_ai_response(user_text, scenario_key):
@@ -115,18 +130,18 @@ if not st.session_state.scenario:
     for i, (key, val) in enumerate(SCENARIOS.items()):
         if cols[i].button(f"{val['icon']} {key.split(' ')[1]}"):
             st.session_state.scenario = key
-            st.session_state.recording_count = 0 # Reset count on new scenario
+            st.session_state.recording_count = 0
             st.rerun()
 else:
     scen = SCENARIOS[st.session_state.scenario]
     st.subheader(f"{scen['icon']} {st.session_state.scenario}")
     
-    # Progress Bar for Usage
+    # Progress Bar
     usage = st.session_state.recording_count
-    st.progress(usage / MAX_RECORDINGS, text=f"Usage Limit: {usage}/{MAX_RECORDINGS} messages")
+    st.progress(usage / MAX_RECORDINGS, text=f"Usage: {usage}/{MAX_RECORDINGS}")
 
     if usage >= MAX_RECORDINGS:
-        st.warning("🛑 Limit reached! Please click 'Start / Reset' in the sidebar or refresh to start over.")
+        st.warning("🛑 Limit reached! Please click 'Start / Reset' in the sidebar.")
     else:
         # Chat History
         for msg in st.session_state.messages:
@@ -146,9 +161,10 @@ else:
             audio_bytes = audio_value.read()
             audio_id = hash(audio_bytes)
 
+            # Prevent Loops
             if audio_id != st.session_state.last_audio_id:
                 st.session_state.last_audio_id = audio_id
-                st.session_state.recording_count += 1 # INCREMENT COUNT
+                st.session_state.recording_count += 1
                 
                 with st.spinner("Listening..."):
                     user_text = transcribe_audio_with_gemini(audio_bytes)
