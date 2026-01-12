@@ -1,116 +1,204 @@
 import streamlit as st
-import time
+import openai
+import os
+import json
+from datetime import datetime
 
-# --- Page Configuration ---
-st.set_page_config(page_title="PflegePartner Prototype", page_icon="🇩🇪", layout="centered")
+# --- 1. CONFIGURATION & SETUP ---
+st.set_page_config(
+    page_title="CareLingo: German Practice",
+    page_icon="🩺",
+    layout="centered"
+)
 
-# --- Custom Styling for "Medical App" feel ---
-st.markdown("""
-    <style>
-    .main-header { font-size: 2rem; color: #2C3E50; font-weight: 700; }
-    .sub-text { font-size: 1.1rem; color: #7F8C8D; }
-    .chat-box { padding: 15px; border-radius: 10px; margin-bottom: 10px; }
-    .doctor-msg { background-color: #EBF5FB; border-left: 5px solid #3498DB; }
-    .nurse-msg { background-color: #EAFAF1; border-left: 5px solid #2ECC71; }
-    .feedback-box { background-color: #FDF2E9; border: 1px solid #E67E22; padding: 15px; border-radius: 5px; }
-    </style>
-""", unsafe_allow_html=True)
+# Load API Key (Ensure this is in your .streamlit/secrets.toml)
+if "OPENAI_API_KEY" in st.secrets:
+    openai.api_key = st.secrets["OPENAI_API_KEY"]
+else:
+    st.error("🚨 OpenAI API Key missing! Please add it to Streamlit Secrets.")
+    st.stop()
 
-# --- Header ---
-st.markdown('<div class="main-header">🇩🇪 PflegePartner</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-text">AI Voice Companion for Relocated Nurses in Germany</div>', unsafe_allow_html=True)
-st.divider()
+# Initialize Session State
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "scenario" not in st.session_state:
+    st.session_state.scenario = None
+if "feedback" not in st.session_state:
+    st.session_state.feedback = None
 
-# --- Sidebar Context ---
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3063/3063176.png", width=50)
-    st.write("## Target User")
-    st.write("**Persona:** Priya, 28")
-    st.write("**Origin:** India → **Goal:** Germany")
-    st.write("**Challenge:** Passed B2 German exam, but freezes when doctors speak fast.")
-    st.info("💡 **Prototype Goal:** Demonstrate voice-first roleplay.")
-
-# --- Scenario Logic ---
-scenarios = {
-    "1. Morning Handover (Übergabe)": {
-        "context": "It is 7:00 AM. Dr. Weber asks about Patient Müller's night.",
-        "doctor_audio_text": "Guten Morgen Schwester. Wie war die Nacht bei Herrn Müller? Ist das Fieber runtergegangen?",
-        "doctor_translation": "(Good morning Nurse. How was Mr. Müller's night? Did the fever go down?)",
-        "nurse_correct_response": "Guten Morgen. Ja, das Fieber ist auf 37,5 gesunken. Er hat gut geschlafen.",
-        "feedback_focus": "Past Tense Verbs (Perfekt)"
+# --- 2. SCENARIOS (German Nursing Context) ---
+SCENARIOS = {
+    "1. Anamnese (Admission)": {
+        "role": "You are a new patient, Herr Müller, admitted for chest pain. You are anxious and speak only German. You speak simply but clearly.",
+        "goal": "Collect patient history: Pain level, allergies, previous conditions.",
+        "icon": "📝"
     },
-    "2. Patient Distress (Notfall)": {
-        "context": "A patient falls in the hallway.",
-        "doctor_audio_text": "Schwester! Schnell! Herr Schmidt ist gestürzt! Bringen Sie den Notfallkoffer!",
-        "doctor_translation": "(Nurse! Quick! Mr. Schmidt fell! Bring the emergency kit!)",
-        "nurse_correct_response": "Ich komme sofort! Ich habe den Koffer.",
-        "feedback_focus": "Urgency & Imperatives"
+    "2. Medikamentengabe (Medication)": {
+        "role": "You are Frau Schneider, an elderly patient who refuses to take her new pills because she fears side effects. You are stubborn but polite.",
+        "goal": "Explain why the medication is needed and calm her fears.",
+        "icon": "💊"
+    },
+    "3. Schichtübergabe (Handover)": {
+        "role": "You are the Morning Shift Doctor (Oberarzt). You are in a rush and need a quick, structured report (ISBAR format) on a patient.",
+        "goal": "Give a structured handover report (Symptoms, Vitals, Actions taken).",
+        "icon": "📋"
+    },
+    "4. Notfall (Emergency)": {
+        "role": "You are a panic-stricken visitor whose husband has just collapsed in the waiting room.",
+        "goal": "Calm the visitor and get essential details (Name, immediate symptoms) while acting fast.",
+        "icon": "🚨"
+    },
+    "5. Entlassung (Discharge)": {
+        "role": "You are a patient eager to go home after surgery. You don't understand the wound care instructions.",
+        "goal": "Explain wound care (cleaning, dressing change) clearly and verify understanding.",
+        "icon": "🏠"
     }
 }
 
-selected_scenario = st.selectbox("Select Practice Scenario:", list(scenarios.keys()))
-current_data = scenarios[selected_scenario]
+# --- 3. HELPER FUNCTIONS ---
 
-# --- Main Interaction Area ---
-st.info(f"📋 **Scenario Context:** {current_data['context']}")
-
-# Step 1: Listen
-st.subheader("1. Listen to the Doctor")
-if st.button("🔊 Play Audio Prompt"):
-    with st.spinner("Dr. Weber is speaking..."):
-        time.sleep(1.5) # Simulate audio playing time
-    st.markdown(f"""
-        <div class="chat-box doctor-msg">
-            <b>👨‍⚕️ Dr. Weber (Voice):</b><br>
-            <i>"{current_data['doctor_audio_text']}"</i>
-        </div>
-    """, unsafe_allow_html=True)
-    st.caption(f"Translation: {current_data['doctor_translation']}")
-
-# Step 2: Speak
-st.subheader("2. Speak Your Response")
-st.write("Press record and answer in German.")
-
-# "Wizard of Oz" Logic: We simulate the recording/processing for the demo
-if st.button("🎙️ Hold to Record"):
-    with st.spinner("Listening..."):
-        time.sleep(2)
-    st.success("Audio captured successfully.")
+def get_ai_response(user_text, scenario_key):
+    """
+    Generates the conversation response AND a critique of the user's German.
+    """
+    scenario_data = SCENARIOS[scenario_key]
     
-    # Simulate Processing
-    with st.status("AI is analyzing your German...", expanded=True) as status:
-        st.write("Transcribing audio to text...")
-        time.sleep(1)
-        st.write("Checking grammar consistency...")
-        time.sleep(1)
-        st.write("Analyzing medical tone...")
-        time.sleep(0.5)
-        status.update(label="Analysis Complete", state="complete", expanded=False)
-
-    # --- Results Display ---
-    st.divider()
-    st.subheader("📊 Performance Report")
+    # We ask for a JSON response to separate the dialogue from the feedback
+    system_prompt = f"""
+    You are a German language tutor for nurses. 
+    ACT AS: {scenario_data['role']}
+    USER GOAL: {scenario_data['goal']}
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Pronunciation", "85%", "Clear")
-    col2.metric("Grammar", "90%", "Correct")
-    col3.metric("Confidence", "High", "Steady Voice")
+    1. Respond naturally to the user in German as the character.
+    2. Then, analyze the user's German input.
+    
+    Output purely in JSON format:
+    {{
+        "response_audio_text": "The German text you say back to the user as the character",
+        "feedback": {{
+            "grammar_score": (1-10),
+            "politeness_score": (1-10, strict on 'Sie' form),
+            "medical_term_accuracy": (1-10),
+            "critique_english": "Brief English tip on their mistake (if any)",
+            "better_german_phrase": "A more professional way to say what they tried to say"
+        }}
+    }}
+    """
+    
+    messages = [
+        {"role": "system", "content": system_prompt},
+    ] 
+    # Add history
+    for msg in st.session_state.messages[-4:]: # Keep context short
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    
+    messages.append({"role": "user", "content": user_text})
 
-    st.markdown("### 🗣️ Transcript")
-    st.markdown(f"""
-        <div class="chat-box nurse-msg">
-            <b>👩‍⚕️ You said:</b><br>
-            "{current_data['nurse_correct_response']}"
-        </div>
-    """, unsafe_allow_html=True)
+    try:
+        completion = openai.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            response_format={"type": "json_object"}
+        )
+        return json.loads(completion.choices[0].message.content)
+    except Exception as e:
+        st.error(f"AI Error: {e}")
+        return None
 
-    st.markdown("### 💡 AI Coach Feedback")
-    st.markdown(f"""
-    <div class="feedback-box">
-        <b>Focus Area: {current_data['feedback_focus']}</b><br>
-        <ul>
-            <li>✅ <b>Vocabulary:</b> Excellent use of medical terms.</li>
-            <li>⚠️ <b>Tip:</b> Try to speak slightly faster to match the doctor's pace.</li>
-        </ul>
-    </div>
-    """, unsafe_allow_html=True)
+def text_to_speech(text):
+    """
+    Converts AI response to audio using OpenAI TTS
+    """
+    try:
+        response = openai.audio.speech.create(
+            model="tts-1",
+            voice="shimmer", # 'shimmer' has a clear, calming female tone
+            input=text
+        )
+        return response.content
+    except Exception as e:
+        st.error(f"TTS Error: {e}")
+        return None
+
+# --- 4. MAIN UI ---
+
+# Sidebar for Setup
+with st.sidebar:
+    st.title("🩺 CareLingo")
+    st.markdown("*Deutsch für Pflegekräfte*")
+    st.markdown("---")
+    
+    selected_scenario = st.radio("Select Practice Scenario:", list(SCENARIOS.keys()))
+    
+    if st.button("Start / Reset Scenario", type="primary"):
+        st.session_state.messages = []
+        st.session_state.scenario = selected_scenario
+        st.session_state.feedback = None
+        st.rerun()
+    
+    st.markdown("---")
+    if st.session_state.feedback:
+        f = st.session_state.feedback
+        st.subheader("📊 Last Turn Analysis")
+        st.progress(f['grammar_score']/10, text=f"Grammar: {f['grammar_score']}/10")
+        st.progress(f['politeness_score']/10, text=f"Politeness (Sie): {f['politeness_score']}/10")
+        st.progress(f['medical_term_accuracy']/10, text=f"Med. Terms: {f['medical_term_accuracy']}/10")
+        st.info(f"💡 **Tip:** {f['critique_english']}")
+        st.success(f"**Better:** {f['better_german_phrase']}")
+
+# Main Chat Area
+if not st.session_state.scenario:
+    st.info("👈 Please select a scenario and click 'Start' to begin.")
+    st.image("https://img.freepik.com/free-vector/health-professional-team_23-2148484530.jpg?w=900", width=400) # Minimalist Placeholder
+else:
+    # Header
+    scen_data = SCENARIOS[st.session_state.scenario]
+    st.markdown(f"### {scen_data['icon']} {st.session_state.scenario}")
+    st.caption(f"**Goal:** {scen_data['goal']}")
+    
+    # Chat History (Display)
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+    
+    # --- AUDIO INPUT (The Core Interaction) ---
+    st.markdown("---")
+    st.write("🎙️ **Reply in German:**")
+    
+    # Native Streamlit Audio Input (Handles the "Red Recording" state automatically)
+    audio_value = st.audio_input("Record your voice")
+
+    if audio_value:
+        # 1. Transcribe User Audio
+        with st.spinner("Transcribing..."):
+            transcript = openai.audio.transcriptions.create(
+                model="whisper-1", 
+                file=audio_value
+            )
+            user_text = transcript.text
+
+        # 2. Display User Text
+        st.session_state.messages.append({"role": "user", "content": user_text})
+        st.rerun()
+
+# Processing Logic (Triggered after rerun to show user msg first)
+if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+    with st.spinner("Nurse AI is thinking..."):
+        # Get AI Response & Feedback
+        ai_data = get_ai_response(st.session_state.messages[-1]["content"], st.session_state.scenario)
+        
+        if ai_data:
+            response_text = ai_data["response_audio_text"]
+            st.session_state.feedback = ai_data["feedback"]
+            
+            # Generate Audio
+            audio_bytes = text_to_speech(response_text)
+            
+            # Append to history
+            st.session_state.messages.append({"role": "assistant", "content": response_text})
+            
+            # Auto-play audio (using hidden element or just standard player)
+            if audio_bytes:
+                 st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+            
+            st.rerun()
