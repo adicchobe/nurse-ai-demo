@@ -31,8 +31,8 @@ else:
     st.error("🚨 Gemini API Key missing! Add 'GEMINI_API_KEY' to Streamlit Secrets.")
     st.stop()
 
-# Initialize Model (Gemini 1.5 Flash is fast and multimodal)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# Try the specific versioned model name
+model = genai.GenerativeModel('gemini-1.5-flash-001')
 
 # Session State
 if "messages" not in st.session_state: st.session_state.messages = []
