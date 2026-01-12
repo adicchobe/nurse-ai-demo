@@ -8,6 +8,22 @@ import io
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo: German Practice", page_icon="🩺", layout="centered")
 
+# --- PASSWORD PROTECTION (Optional) ---
+if "APP_PASSWORD" in st.secrets:
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    
+    if not st.session_state.authenticated:
+        st.title("🔒 Login Required")
+        user_pwd = st.text_input("Enter Access Password", type="password")
+        if st.button("Login"):
+            if user_pwd == st.secrets["APP_PASSWORD"]:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
+        st.stop()
+        
 # Load API Key
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
