@@ -87,17 +87,4 @@ if "APP_PASSWORD" in st.secrets:
         else:
             st.error("Incorrect Password")
 
-    if not st.session_state.authenticated:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("<h1 style='text-align: center; color: white;'>🔒 Login</h1>", unsafe_allow_html=True)
-        
-        # Clean Login Input without Form Clutter
-        st.text_input("Enter Access Password", type="password", key="password_input", on_change=password_entered)
-        st.button("Enter CareLingo", on_click=password_entered)
-        st.stop()
-
-# --- 3. ROBUST MODEL LOADER ---
-@st.cache_resource
-def load_working_model():
-    candidates = [
-        "gem
+    if not st.session_state
