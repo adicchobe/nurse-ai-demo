@@ -31,35 +31,22 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect password.")
         st.stop()
 
-# --- 2. FAIL-SAFE MODEL LOADER ---
-# This block tries multiple model names until one works.
-@st.cache_resource
-def load_model():
-    # The list of aliases to try. One of these WILL work.
-    candidates = [
-        "gemini-1.5-flash", 
-        "models/gemini-1.5-flash", 
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-flash-001",
-        "gemini-1.5-flash-002"
-    ]
-    
-    for name in candidates:
-        try:
-            model = genai.GenerativeModel(name)
-            # Test the connection lightly
-            model.generate_content("Test")
-            return model
-        except Exception:
-            continue # If it fails, try the next one
-    
-    return None
+# --- 2. MANUAL MODEL SELECTOR (This saved us last time) ---
+with st.sidebar:
+    st.header("⚙️ Settings")
+    try:
+        # Get list of models your key can actually see
+        models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+        # Sort to put Flash 1.5 at top
+        models.sort(key=lambda x: "flash" not in x)
+        
+        st.success(f"✅ Key Active! Found {len(models)} models.")
+        model_name = st.selectbox("Select Brain:", models, index=0)
+    except Exception as e:
+        st.error(f"API Key Error: {e}")
+        model_name = "models/gemini-1.5-flash" # Fallback
 
-model = load_model()
-
-if not model:
-    st.error("❌ Critical Error: Could not connect to Google AI. Please check your API Key quota.")
-    st.stop()
+model = genai.GenerativeModel(model_name)
 
 # --- 3. SESSION STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -98,7 +85,7 @@ def transcribe_audio(audio_bytes):
         ])
         return response.text.strip()
     except Exception as e:
-        st.error(f"Transcription Failed: {e}")
+        st.error(f"Transcription Failed ({model_name}): {e}")
         return None
 
 def get_teacher_response(user_text, scenario_key):
@@ -173,7 +160,7 @@ else:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
         
-        # --- TEACHER FEEDBACK (The specific request) ---
+        # --- TEACHER FEEDBACK (Requested Feature) ---
         if st.session_state.feedback:
             f = st.session_state.feedback
             with st.expander("📊 Teacher's Feedback", expanded=True):
@@ -191,7 +178,7 @@ else:
             audio_bytes = audio_value.read()
             audio_id = hash(audio_bytes)
 
-            # Prevent Infinite Loop
+            # Infinite Loop Fix
             if audio_id != st.session_state.last_audio_id:
                 st.session_state.last_audio_id = audio_id
                 st.session_state.recording_count += 1
