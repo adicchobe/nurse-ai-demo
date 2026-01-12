@@ -5,73 +5,77 @@ import os
 import json
 import io
 
-# --- 1. APP CONFIGURATION & STYLING ---
+# --- 1. APP CONFIGURATION & VISUALS ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
 
-# Custom "Apple-esque" CSS
+# Custom "Apple-esque" CSS (San Francisco Font, Rounded Cards, Soft Shadows)
 st.markdown("""
 <style>
-    /* Global Font & Background */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
     
     html, body, [class*="css"] {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family: 'Inter', sans-serif;
+        color: #1E293B;
     }
     
-    /* Clean Header */
+    /* Header Styling */
     .main-header {
         font-weight: 700;
-        font-size: 2.5rem;
-        color: #1E293B;
+        font-size: 2.2rem;
+        color: #0F172A;
         text-align: center;
+        letter-spacing: -0.02em;
         margin-bottom: 0.5rem;
     }
     .sub-header {
-        font-size: 1.1rem;
+        font-size: 1.0rem;
         color: #64748B;
         text-align: center;
-        margin-bottom: 2rem;
+        margin-bottom: 2.5rem;
     }
 
-    /* Card Styling (Apple Style) */
-    .stButton button {
-        background-color: #FFFFFF;
-        border: 1px solid #E2E8F0;
+    /* Scenario Cards */
+    .scenario-card {
+        background-color: white;
+        padding: 1.5rem;
         border-radius: 16px;
-        padding: 1rem;
-        font-weight: 600;
-        color: #334155;
-        transition: all 0.2s ease;
+        border: 1px solid #E2E8F0;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        width: 100%;
+        text-align: center;
+        transition: transform 0.2s;
+        height: 100%;
+    }
+    .scenario-icon {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
     }
     
+    /* Buttons (Apple Style) */
+    .stButton button {
+        border-radius: 12px;
+        font-weight: 600;
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        transition: all 0.2s;
+    }
     .stButton button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
         border-color: #3B82F6;
         color: #3B82F6;
+        transform: translateY(-1px);
     }
 
-    /* Feedback Box Styling (Glassmorphism) */
-    .feedback-box {
-        background: rgba(255, 255, 255, 0.8);
+    /* Feedback Card (Glass) */
+    .feedback-container {
+        background: #F8FAFC;
         border: 1px solid #E2E8F0;
-        border-radius: 12px;
+        border-radius: 16px;
         padding: 1.5rem;
-        margin-top: 1.5rem;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    }
-    
-    /* Metrics */
-    div[data-testid="stMetricValue"] {
-        font-size: 1.8rem;
-        font-weight: 700;
+        margin-top: 2rem;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. AUTHENTICATION & API SETUP ---
+# --- 2. AUTHENTICATION ---
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
@@ -83,94 +87,81 @@ if "APP_PASSWORD" in st.secrets:
         st.session_state.authenticated = False
     
     if not st.session_state.authenticated:
-        st.title("🔒 Login")
-        user_pwd = st.text_input("Password", type="password")
-        if st.button("Enter Access"):
+        st.markdown("<h2 style='text-align: center;'>🔒 Login</h2>", unsafe_allow_html=True)
+        user_pwd = st.text_input("Enter Password", type="password")
+        if st.button("Enter CareLingo", use_container_width=True):
             if user_pwd == st.secrets["APP_PASSWORD"]:
                 st.session_state.authenticated = True
                 st.rerun()
             else:
-                st.error("Access Denied.")
+                st.error("Incorrect Password")
         st.stop()
 
-# --- 3. LOGIC: MODEL HUNTER ---
-# (Keeping your robust logic, just hiding it from the UI view)
-@st.cache_resource
-def get_best_model():
-    # Priority: Unlimited Native -> Unlimited Preview -> Standard
-    candidates = [
-        "gemini-2.5-flash-native-audio-dialog",
-        "gemini-2.0-flash-exp",
-        "models/gemini-1.5-flash",
-        "gemini-1.5-flash"
-    ]
-    for name in candidates:
-        try:
-            model = genai.GenerativeModel(name)
-            model.generate_content("Ping")
-            return model, name
-        except:
-            continue
-    return None, None
-
-model, model_name = get_best_model()
-if not model:
-    st.error("❌ Service Unavailable. Please check API Quota.")
-    st.stop()
-
-# --- 4. SESSION MANAGEMENT ---
+# --- 3. SESSION STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "scenario" not in st.session_state: st.session_state.scenario = None
 if "feedback" not in st.session_state: st.session_state.feedback = None
 if "last_audio_id" not in st.session_state: st.session_state.last_audio_id = None
-if "recording_count" not in st.session_state: st.session_state.recording_count = 0
-MAX_RECORDINGS = 20
 
-# --- 5. SCENARIO DATA (Enhanced Visuals) ---
+# --- 4. SCENARIO DATA ---
 SCENARIOS = {
     "Admission": {
         "title": "Patient Admission",
-        "desc": "Collect history from an anxious new patient.",
-        "role": "You are Herr Müller. Anxious, speaks only German.",
-        "goal": "Get medical history.",
+        "desc": "Collect medical history from a nervous new patient.",
+        "role": "You are Herr Müller. You are anxious and speak only German.",
+        "goal": "Collect patient history.",
         "icon": "📋"
     },
     "Medication": {
         "title": "Medication Refusal",
-        "desc": "Convince a patient to take their pills.",
-        "role": "You are Frau Schneider. You refuse pills.",
-        "goal": "Explain necessity.",
+        "desc": "Convince a stubborn patient to take their pills.",
+        "role": "You are Frau Schneider. You refuse to take pills.",
+        "goal": "Explain why medication is needed.",
         "icon": "💊"
     },
     "Emergency": {
         "title": "Emergency Triage",
-        "desc": "Handle a collapsed visitor scenario.",
-        "role": "Visitor whose husband collapsed.",
-        "goal": "Get vitals fast.",
+        "desc": "Gather vitals from a visitor whose husband collapsed.",
+        "role": "You are a visitor whose husband collapsed.",
+        "goal": "Get details fast.",
         "icon": "🚨"
     }
 }
 
-# --- 6. CORE AI FUNCTIONS ---
+# --- 5. ROBUST AI FUNCTIONS ---
+def get_model():
+    # Silent fallback logic - no crashing allowed
+    try:
+        return genai.GenerativeModel("gemini-1.5-flash")
+    except:
+        return None
+
+model = get_model()
+
 def transcribe_audio(audio_bytes):
     try:
         prompt = "Transcribe this German audio exactly. Output ONLY the German text."
         response = model.generate_content([prompt, {"mime_type": "audio/mp3", "data": audio_bytes}])
         return response.text.strip()
-    except:
-        return None
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 def get_feedback(user_text, scenario_key):
     scen = SCENARIOS[scenario_key]
     system_prompt = f"""
-    Roleplay as: {scen['role']}
-    Goal: {scen['goal']}
-    Language: German.
-    Output JSON: {{
+    Act as a German tutor. 
+    Scenario Role: {scen['role']}
+    User Goal: {scen['goal']}
+    
+    1. Reply naturally in German (Keep it short).
+    2. Analyze the user's German.
+    
+    Return JSON:
+    {{
         "response_text": "German reply",
         "feedback": {{
             "grammar": (1-10), "politeness": (1-10), "medical": (1-10),
-            "critique": "Short English tip", "better_phrase": "German correction"
+            "critique": "Short English tip", "better_phrase": "Correction"
         }}
     }}
     """
@@ -190,118 +181,115 @@ def text_to_speech(text):
     except:
         return None
 
-# --- 7. MAIN UI LAYOUT ---
+# --- 6. MAIN UI LAYOUT ---
 
 # Header
-st.markdown('<div class="main-header">🩺 CareLingo</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">CareLingo</div>', unsafe_allow_html=True)
 
-# Scenario Selection (The "Apple" Grid)
+# SCENARIO SELECTION (Apple Grid Layout)
 if not st.session_state.scenario:
     st.markdown('<div class="sub-header">Select a scenario to begin practice</div>', unsafe_allow_html=True)
     
-    # 3-Column Layout for "Cards"
-    col1, col2, col3 = st.columns(3)
+    c1, c2, c3 = st.columns(3)
     
-    with col1:
-        st.write(f"# {SCENARIOS['Admission']['icon']}")
-        if st.button("Start Admission", use_container_width=True):
+    with c1:
+        st.markdown(f"<div class='scenario-icon'>{SCENARIOS['Admission']['icon']}</div>", unsafe_allow_html=True)
+        if st.button("Start Admission", key="btn_adm", use_container_width=True):
             st.session_state.scenario = "Admission"
             st.rerun()
         st.caption(SCENARIOS['Admission']['desc'])
         
-    with col2:
-        st.write(f"# {SCENARIOS['Medication']['icon']}")
-        if st.button("Start Medication", use_container_width=True):
+    with c2:
+        st.markdown(f"<div class='scenario-icon'>{SCENARIOS['Medication']['icon']}</div>", unsafe_allow_html=True)
+        if st.button("Start Medication", key="btn_med", use_container_width=True):
             st.session_state.scenario = "Medication"
             st.rerun()
         st.caption(SCENARIOS['Medication']['desc'])
         
-    with col3:
-        st.write(f"# {SCENARIOS['Emergency']['icon']}")
-        if st.button("Start Emergency", use_container_width=True):
+    with c3:
+        st.markdown(f"<div class='scenario-icon'>{SCENARIOS['Emergency']['icon']}</div>", unsafe_allow_html=True)
+        if st.button("Start Emergency", key="btn_emg", use_container_width=True):
             st.session_state.scenario = "Emergency"
             st.rerun()
         st.caption(SCENARIOS['Emergency']['desc'])
 
-# Active Session View
+# ACTIVE PRACTICE SESSION
 else:
-    curr_scen = SCENARIOS[st.session_state.scenario]
+    scen_data = SCENARIOS[st.session_state.scenario]
     
-    # Top Bar: Back Button & Progress
-    c1, c2 = st.columns([1, 4])
-    with c1:
+    # Navigation Bar
+    col_back, col_title = st.columns([1, 5])
+    with col_back:
         if st.button("← End Session"):
             st.session_state.scenario = None
             st.session_state.messages = []
             st.session_state.feedback = None
             st.rerun()
-    with c2:
-        # Styled Progress
-        prog = st.session_state.recording_count / MAX_RECORDINGS
-        st.progress(prog)
-        st.caption(f"Session Progress: {st.session_state.recording_count}/{MAX_RECORDINGS}")
-
-    st.markdown("---")
+            
+    with col_title:
+        st.markdown(f"**{scen_data['icon']} {scen_data['title']}**")
     
-    # Context Header
-    st.markdown(f"### {curr_scen['icon']} {curr_scen['title']}")
-    st.info(f"**Your Role:** Nurse | **Goal:** {curr_scen['goal']}")
+    st.divider()
 
-    # Chat Area
+    # Chat Interface
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🤖"):
             st.write(msg["content"])
-
-    # Teacher Feedback Card (The Visual Upgrade)
+            
+    # VISUAL FEEDBACK CARD (The "Apple" Element)
     if st.session_state.feedback:
         f = st.session_state.feedback
-        st.markdown('<div class="feedback-box">', unsafe_allow_html=True)
-        st.markdown("##### 👩‍🏫 Analysis")
         
-        # Metrics Row
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Grammar", f"{f.get('grammar',0)}/10", delta_color="normal")
-        m2.metric("Politeness", f"{f.get('politeness',0)}/10", delta_color="normal")
-        m3.metric("Medical", f"{f.get('medical',0)}/10", delta_color="normal")
+        st.markdown('<div class="feedback-container">', unsafe_allow_html=True)
+        st.caption("TEACHER'S ANALYSIS")
         
-        # Correction Box
-        st.warning(f"💡 **Tip:** {f.get('critique', 'N/A')}")
-        st.success(f"🗣️ **Try saying:** \"{f.get('better_phrase', 'N/A')}\"")
+        # Big Scores
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Grammar", f"{f.get('grammar',0)}/10")
+        c2.metric("Politeness", f"{f.get('politeness',0)}/10")
+        c3.metric("Medical", f"{f.get('medical',0)}/10")
         
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # "Redo" Logic (Bonus Feature)
-        if st.button("🔄 Redo Last Turn", help="Remove the last exchange and try again"):
+        st.markdown("---")
+        st.info(f"💡 **Tip:** {f.get('critique', 'N/A')}")
+        st.success(f"🗣️ **Better:** \"{f.get('better_phrase', 'N/A')}\"")
+        
+        # Redo Button (Bonus Feature)
+        if st.button("🔄 Redo Last Turn", help="Try this sentence again"):
             if len(st.session_state.messages) >= 2:
                 st.session_state.messages.pop()
                 st.session_state.messages.pop()
                 st.session_state.feedback = None
-                st.session_state.recording_count -= 1
                 st.rerun()
+                
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    # Input Area
-    st.markdown("###") # Spacer
-    audio_val = st.audio_input("Tap to Speak...")
+    # Audio Input at Bottom
+    st.markdown("###")
+    audio_val = st.audio_input("Tap microphone to speak...")
     
     if audio_val:
-        # Processing Logic (Unchanged)
         audio_bytes = audio_val.read()
         aid = hash(audio_bytes)
+        
         if aid != st.session_state.last_audio_id:
             st.session_state.last_audio_id = aid
-            st.session_state.recording_count += 1
             
             with st.spinner("Listening..."):
                 txt = transcribe_audio(audio_bytes)
             
-            if txt:
+            if txt and "Error" not in txt:
                 st.session_state.messages.append({"role": "user", "content": txt})
-                with st.spinner("Analyzing..."):
+                
+                with st.spinner("Teacher is analyzing..."):
                     ai_dat = get_feedback(txt, st.session_state.scenario)
+                    
                     if ai_dat:
                         resp = ai_dat["response_text"]
                         st.session_state.feedback = ai_dat["feedback"]
                         st.session_state.messages.append({"role": "assistant", "content": resp})
-                        aud_st = text_to_speech(resp)
-                        if aud_st: st.audio(aud_st, format="audio/mp3", autoplay=True)
+                        
+                        aud = text_to_speech(resp)
+                        if aud: st.audio(aud, format="audio/mp3", autoplay=True)
                 st.rerun()
+            elif "Error" in txt:
+                st.error("Connection failed. Please try again.")
