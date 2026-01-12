@@ -31,29 +31,31 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect password.")
         st.stop()
 
-# --- 2. HARDCODED MODEL CONNECTION (The Fix) ---
-# We try the alias that worked for you before.
+# --- 2. ROBUST MODEL LOADER ---
+# This tries standard names until one connects.
 @st.cache_resource
-def load_hardcoded_model():
-    # These are the 3 most common names. It will use the first one that works.
+def load_model():
+    # List of likely model names
     candidates = [
-        "gemini-1.5-flash",          # The standard alias
-        "models/gemini-1.5-flash",   # The explicit path
-        "gemini-1.5-flash-001"       # The versioned ID
+        "gemini-1.5-flash", 
+        "models/gemini-1.5-flash",
+        "gemini-1.5-flash-001",
+        "gemini-1.5-flash-latest"
     ]
     for name in candidates:
         try:
             model = genai.GenerativeModel(name)
-            model.generate_content("Test") # Quick connection check
+            # Quick connection test
+            model.generate_content("Hi")
             return model
         except:
             continue
     return None
 
-model = load_hardcoded_model()
+model = load_model()
 
 if not model:
-    st.error("❌ Error: Could not connect to Gemini 1.5 Flash. Please check API Key quota.")
+    st.error("❌ Critical Error: Could not connect to Google AI. Your API Key might be temporarily blocked due to rate limits. Please try a NEW API Key.")
     st.stop()
 
 # --- 3. SESSION STATE ---
@@ -86,4 +88,127 @@ SCENARIOS = {
 # --- 5. HELPER FUNCTIONS ---
 def transcribe_audio(audio_bytes):
     try:
-        prompt = "Transcribe this German audio exactly. Output
+        # Fixed the string syntax error here
+        prompt = "Transcribe this German audio exactly. Output ONLY the German text."
+        response = model.generate_content([
+            prompt,
+            {"mime_type": "audio/mp3", "data": audio_bytes}
+        ])
+        return response.text.strip()
+    except Exception as e:
+        st.error(f"Transcription Error: {e}")
+        return None
+
+def get_teacher_response(user_text, scenario_key):
+    scenario_data = SCENARIOS[scenario_key]
+    
+    system_prompt = f"""
+    You are a German language tutor for nurses.
+    ACT AS: {scenario_data['role']}
+    USER GOAL: {scenario_data['goal']}
+    
+    1. Respond naturally in German (Spoken style, keep it short).
+    2. Analyze the user's German strictly.
+    
+    Output ONLY JSON:
+    {{
+        "response_text": "German text to speak back",
+        "feedback": {{
+            "grammar_score": (1-10 integer),
+            "politeness_score": (1-10 integer),
+            "medical_score": (1-10 integer),
+            "critique": "Brief English tip on mistake",
+            "better_phrase": "Correct German phrase"
+        }}
+    }}
+    """
+    
+    try:
+        response = model.generate_content(
+            f"{system_prompt}\nUser said: {user_text}", 
+            generation_config={"response_mime_type": "application/json"}
+        )
+        return json.loads(response.text)
+    except Exception as e:
+        st.error(f"Analysis Error: {e}")
+        return None
+
+def text_to_speech_free(text):
+    try:
+        tts = gTTS(text=text, lang='de')
+        mp3_fp = io.BytesIO()
+        tts.write_to_fp(mp3_fp)
+        mp3_fp.seek(0)
+        return mp3_fp
+    except Exception as e:
+        st.error(f"TTS Error: {e}")
+        return None
+
+# --- 6. MAIN UI ---
+st.title("🩺 CareLingo")
+
+if not st.session_state.scenario:
+    st.info("👈 Select a scenario to start.")
+    cols = st.columns(len(SCENARIOS))
+    for i, (key, val) in enumerate(SCENARIOS.items()):
+        if cols[i].button(f"{val['icon']} {key.split(' ')[1]}"):
+            st.session_state.scenario = key
+            st.session_state.recording_count = 0
+            st.rerun()
+else:
+    scen = SCENARIOS[st.session_state.scenario]
+    st.subheader(f"{scen['icon']} {st.session_state.scenario}")
+    
+    # Progress Bar
+    usage = st.session_state.recording_count
+    st.progress(usage / MAX_RECORDINGS, text=f"Session Limit: {usage}/{MAX_RECORDINGS}")
+
+    if usage >= MAX_RECORDINGS:
+        st.warning("🛑 Session limit reached. Refresh to restart.")
+    else:
+        # Chat History
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.write(msg["content"])
+        
+        # --- TEACHER FEEDBACK ---
+        if st.session_state.feedback:
+            f = st.session_state.feedback
+            with st.expander("📊 Teacher's Feedback", expanded=True):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Grammar", f"{f.get('grammar_score', '?')}/10")
+                c2.metric("Politeness", f"{f.get('politeness_score', '?')}/10")
+                c3.metric("Medical", f"{f.get('medical_score', '?')}/10")
+                st.info(f"💡 {f.get('critique', 'No specific critique.')}")
+                st.success(f"🗣️ **Better:** \"{f.get('better_phrase', '')}\"")
+
+        st.divider()
+        audio_value = st.audio_input("Reply in German...")
+
+        if audio_value:
+            audio_bytes = audio_value.read()
+            audio_id = hash(audio_bytes)
+
+            # Loop Protection
+            if audio_id != st.session_state.last_audio_id:
+                st.session_state.last_audio_id = audio_id
+                st.session_state.recording_count += 1
+                
+                with st.spinner("Listening..."):
+                    user_text = transcribe_audio(audio_bytes)
+                
+                if user_text:
+                    st.session_state.messages.append({"role": "user", "content": user_text})
+                    
+                    with st.spinner("Teacher is analyzing..."):
+                        ai_data = get_teacher_response(user_text, st.session_state.scenario)
+                        
+                        if ai_data:
+                            resp_text = ai_data["response_text"]
+                            st.session_state.feedback = ai_data.get("feedback")
+                            st.session_state.messages.append({"role": "assistant", "content": resp_text})
+                            
+                            audio_stream = text_to_speech_free(resp_text)
+                            if audio_stream:
+                                st.audio(audio_stream, format="audio/mp3", autoplay=True)
+                    st.rerun()
