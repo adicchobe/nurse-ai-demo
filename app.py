@@ -4,6 +4,7 @@ from gtts import gTTS
 import os
 import json
 import io
+import time
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
@@ -31,31 +32,35 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect password.")
         st.stop()
 
-# --- 2. ROBUST MODEL LOADER ---
-# This tries standard names until one connects.
-@st.cache_resource
-def load_model():
-    # List of likely model names
+# --- 2. CONNECTION TESTER (NO CACHE) ---
+def get_working_model():
+    status_text = st.empty()
+    
+    # We try these 3 models in order.
     candidates = [
-        "gemini-1.5-flash", 
-        "models/gemini-1.5-flash",
-        "gemini-1.5-flash-001",
-        "gemini-1.5-flash-latest"
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-2.0-flash-exp" # The experimental one that worked before
     ]
+    
     for name in candidates:
         try:
+            status_text.text(f"🔌 Trying to connect to {name}...")
             model = genai.GenerativeModel(name)
-            # Quick connection test
+            # Test the connection
             model.generate_content("Hi")
+            status_text.empty() # Clear the message if successful
             return model
-        except:
+        except Exception as e:
+            print(f"Failed {name}: {e}") # Log to console
             continue
+            
+    status_text.error("❌ All models failed. Your API Key may be invalid or new keys might need 5 mins to activate.")
     return None
 
-model = load_model()
+model = get_working_model()
 
 if not model:
-    st.error("❌ Critical Error: Could not connect to Google AI. Your API Key might be temporarily blocked due to rate limits. Please try a NEW API Key.")
     st.stop()
 
 # --- 3. SESSION STATE ---
@@ -88,7 +93,6 @@ SCENARIOS = {
 # --- 5. HELPER FUNCTIONS ---
 def transcribe_audio(audio_bytes):
     try:
-        # Fixed the string syntax error here
         prompt = "Transcribe this German audio exactly. Output ONLY the German text."
         response = model.generate_content([
             prompt,
