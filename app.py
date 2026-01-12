@@ -4,10 +4,9 @@ from gtts import gTTS
 import os
 import json
 import io
-import time
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="CareLingo Live", page_icon="⚡", layout="centered")
+st.set_page_config(page_title="CareLingo Hunter", page_icon="🩺", layout="centered")
 
 # Load API Key
 if "GEMINI_API_KEY" in st.secrets:
@@ -32,41 +31,33 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect password.")
         st.stop()
 
-# --- 2. UNLIMITED MODEL CONNECTOR ---
-@st.cache_resource
-def get_model():
-    # Priority list based on your screenshot
-    candidates = [
-        "gemini-2.5-flash-native-audio-dialog", # ⚡ Your Unlimited Find
-        "gemini-2.0-flash-exp",                 # ⚡ Standard Unlimited Preview
-        "gemini-1.5-flash",                     # Fallback
-        "gemini-1.5-flash-latest"
-    ]
+# --- 2. MODEL HUNTER (The Fix) ---
+with st.sidebar:
+    st.header("⚙️ Model Settings")
+    st.write(f"**Library Version:** `{genai.__version__}`")
     
-    status = st.empty()
-    
-    for name in candidates:
-        try:
-            status.info(f"🔌 Trying to connect to: {name}...")
-            model = genai.GenerativeModel(name)
-            # Quick test to see if it accepts standard text prompts
-            model.generate_content("Ping") 
-            status.success(f"✅ Connected to: **{name}**")
-            time.sleep(1)
-            status.empty()
-            return model, name
-        except Exception as e:
-            # If the "Live" model rejects standard calls, we catch it here and move to the next
-            print(f"Skipping {name}: {e}")
-            continue
+    try:
+        # We ask Google: "Give me models that support generateContent"
+        # This automatically filters out the incompatible "Live API" models
+        all_models = genai.list_models()
+        compatible_models = [m.name for m in all_models if 'generateContent' in m.supported_generation_methods]
+        
+        # Sort them to put the newest/best ones on top
+        compatible_models.sort(key=lambda x: 'flash' not in x) # Flash models first
+        
+        if compatible_models:
+            st.success(f"✅ Found {len(compatible_models)} compatible models")
+            model_name = st.selectbox("Select Brain:", compatible_models, index=0)
+        else:
+            st.error("❌ No compatible models found for this API Key.")
+            model_name = "models/gemini-1.5-flash" # Fallback
             
-    status.error("❌ Could not connect. Please check your API Key.")
-    return None, None
+    except Exception as e:
+        st.error(f"API Error: {e}")
+        model_name = "models/gemini-1.5-flash"
 
-model, model_name = get_model()
-
-if not model:
-    st.stop()
+# Initialize the selected model
+model = genai.GenerativeModel(model_name)
 
 # --- 3. SESSION STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -74,7 +65,7 @@ if "scenario" not in st.session_state: st.session_state.scenario = None
 if "feedback" not in st.session_state: st.session_state.feedback = None
 if "last_audio_id" not in st.session_state: st.session_state.last_audio_id = None
 if "recording_count" not in st.session_state: st.session_state.recording_count = 0
-MAX_RECORDINGS = 20 # Increased limit since you have unlimited quota!
+MAX_RECORDINGS = 20
 
 # --- 4. SCENARIOS ---
 SCENARIOS = {
@@ -98,7 +89,6 @@ SCENARIOS = {
 # --- 5. HELPER FUNCTIONS ---
 def transcribe_audio(audio_bytes):
     try:
-        # Prompt explicitly asks for text, even from native audio models
         prompt = "Transcribe this German audio exactly. Output ONLY the German text."
         response = model.generate_content([
             prompt,
@@ -106,7 +96,7 @@ def transcribe_audio(audio_bytes):
         ])
         return response.text.strip()
     except Exception as e:
-        st.error(f"Transcription Error ({model_name}): {e}")
+        st.error(f"Transcription Error: {e}")
         return None
 
 def get_teacher_response(user_text, scenario_key):
@@ -155,8 +145,7 @@ def text_to_speech_free(text):
         return None
 
 # --- 6. MAIN UI ---
-st.title("⚡ CareLingo Live")
-# st.caption(f"Using Brain: {model_name}") 
+st.title("🩺 CareLingo Hunter")
 
 if not st.session_state.scenario:
     st.info("👈 Select a scenario to start.")
@@ -170,7 +159,7 @@ else:
     scen = SCENARIOS[st.session_state.scenario]
     st.subheader(f"{scen['icon']} {st.session_state.scenario}")
     
-    # Progress Bar (Increased to 20)
+    # Progress Bar
     usage = st.session_state.recording_count
     st.progress(usage / MAX_RECORDINGS, text=f"Session Limit: {usage}/{MAX_RECORDINGS}")
 
@@ -205,7 +194,7 @@ else:
                 st.session_state.last_audio_id = audio_id
                 st.session_state.recording_count += 1
                 
-                with st.spinner(f"Listening with {model_name}..."):
+                with st.spinner("Listening..."):
                     user_text = transcribe_audio(audio_bytes)
                 
                 if user_text:
