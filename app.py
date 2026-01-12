@@ -31,27 +31,23 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect password.")
         st.stop()
 
-# --- SMART MODEL SELECTOR (The Fix) ---
-# We ask the API what models it has, and pick the best stable Flash version.
+# --- SMART MODEL SELECTOR ---
 try:
     available_models = [m.name for m in genai.list_models()]
-    
-    # Priority 1: Specific Stable 1.5 Flash (Most reliable)
+    # Priority 1: Specific Stable 1.5 Flash
     if "models/gemini-1.5-flash-001" in available_models:
         model_name = "models/gemini-1.5-flash-001"
     # Priority 2: Generic 1.5 Flash
     elif "models/gemini-1.5-flash" in available_models:
         model_name = "models/gemini-1.5-flash"
-    # Priority 3: Any Flash model (Fallback)
+    # Fallback
     else:
-        flash_models = [m for m in available_models if "flash" in m and "exp" not in m]
-        model_name = flash_models[0] if flash_models else "models/gemini-1.5-flash"
+        model_name = "models/gemini-1.5-flash"
 
     model = genai.GenerativeModel(model_name)
-    # st.toast(f"Connected to: {model_name}") # Uncomment to see which one it picked
 except Exception as e:
     st.error(f"Error finding model: {e}")
-    model = genai.GenerativeModel("models/gemini-1.5-flash") # Ultimate fallback
+    model = genai.GenerativeModel("models/gemini-1.5-flash")
 
 # --- SESSION STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -90,16 +86,34 @@ def transcribe_audio_with_gemini(audio_bytes):
         ])
         return response.text.strip()
     except Exception as e:
-        st.error(f"Transcription Error with {model_name}: {e}")
+        st.error(f"Transcription Error: {e}")
         return None
 
 def get_ai_response(user_text, scenario_key):
     scenario_data = SCENARIOS[scenario_key]
+    
+    # ENHANCED PROMPT: Demands detailed scoring
     system_prompt = f"""
+    You are a strict German language tutor for nurses.
     ACT AS: {scenario_data['role']}
-    Respond in German. Then output JSON with feedback.
-    Example JSON: {{"response_text": "...", "feedback": {{ "critique": "..." }} }}
+    USER GOAL: {scenario_data['goal']}
+    
+    1. Respond naturally in German (Keep it short, spoken style).
+    2. Analyze the user's German input strictly.
+    
+    Output ONLY JSON:
+    {{
+        "response_text": "German text to speak back",
+        "feedback": {{
+            "grammar_score": (1-10 integer),
+            "politeness_score": (1-10 integer, strict on 'Sie' vs 'Du'),
+            "medical_score": (1-10 integer, use of correct terms),
+            "critique": "Brief English explanation of the biggest mistake",
+            "better_phrase": "The perfect German phrase they SHOULD have used"
+        }}
+    }}
     """
+    
     try:
         response = model.generate_content(
             f"{system_prompt}\nUser said: {user_text}", 
@@ -136,9 +150,9 @@ else:
     scen = SCENARIOS[st.session_state.scenario]
     st.subheader(f"{scen['icon']} {st.session_state.scenario}")
     
-    # Progress Bar
+    # Progress Bar for Usage
     usage = st.session_state.recording_count
-    st.progress(usage / MAX_RECORDINGS, text=f"Usage: {usage}/{MAX_RECORDINGS}")
+    st.progress(usage / MAX_RECORDINGS, text=f"Session Limit: {usage}/{MAX_RECORDINGS}")
 
     if usage >= MAX_RECORDINGS:
         st.warning("🛑 Limit reached! Please click 'Start / Reset' in the sidebar.")
@@ -147,21 +161,28 @@ else:
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.write(msg["content"])
-                
-        # Feedback Box
+        
+        # --- DETAILED FEEDBACK SECTION (Restored) ---
         if st.session_state.feedback:
-            with st.expander("📊 Analysis (Last Turn)", expanded=True):
-                f = st.session_state.feedback
-                st.info(f"💡 **Tip:** {f.get('critique', 'Good job!')}")
+            f = st.session_state.feedback
+            with st.expander("📊 Teacher's Feedback (Last Turn)", expanded=True):
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Grammar", f"{f.get('grammar_score', 0)}/10")
+                c2.metric("Politeness", f"{f.get('politeness_score', 0)}/10")
+                c3.metric("Medical", f"{f.get('medical_score', 0)}/10")
+                
+                st.info(f"💡 **Correction:** {f.get('critique', 'No comments.')}")
+                st.success(f"🗣️ **Better:** \"{f.get('better_phrase', '')}\"")
 
         st.divider()
+        
+        # Audio Input
         audio_value = st.audio_input("Reply in German...")
 
         if audio_value:
             audio_bytes = audio_value.read()
             audio_id = hash(audio_bytes)
 
-            # Prevent Loops
             if audio_id != st.session_state.last_audio_id:
                 st.session_state.last_audio_id = audio_id
                 st.session_state.recording_count += 1
@@ -172,7 +193,7 @@ else:
                 if user_text:
                     st.session_state.messages.append({"role": "user", "content": user_text})
                     
-                    with st.spinner("Thinking..."):
+                    with st.spinner("Analyzing & Replying..."):
                         ai_data = get_ai_response(user_text, st.session_state.scenario)
                         
                         if ai_data:
