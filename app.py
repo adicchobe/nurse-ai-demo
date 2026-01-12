@@ -4,9 +4,10 @@ from gtts import gTTS
 import os
 import json
 import io
+import time
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
+st.set_page_config(page_title="CareLingo Live", page_icon="⚡", layout="centered")
 
 # Load API Key
 if "GEMINI_API_KEY" in st.secrets:
@@ -31,22 +32,40 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect password.")
         st.stop()
 
-# --- SIDEBAR DIAGNOSTICS (Check if library updated) ---
-with st.sidebar:
-    st.header("🔧 Diagnostics")
-    st.write(f"**Library Version:** `{genai.__version__}`")
-    st.info("ℹ️ Version must be **0.8.3** or higher to work.")
+# --- 2. UNLIMITED MODEL CONNECTOR ---
+@st.cache_resource
+def get_model():
+    # Priority list based on your screenshot
+    candidates = [
+        "gemini-2.5-flash-native-audio-dialog", # ⚡ Your Unlimited Find
+        "gemini-2.0-flash-exp",                 # ⚡ Standard Unlimited Preview
+        "gemini-1.5-flash",                     # Fallback
+        "gemini-1.5-flash-latest"
+    ]
+    
+    status = st.empty()
+    
+    for name in candidates:
+        try:
+            status.info(f"🔌 Trying to connect to: {name}...")
+            model = genai.GenerativeModel(name)
+            # Quick test to see if it accepts standard text prompts
+            model.generate_content("Ping") 
+            status.success(f"✅ Connected to: **{name}**")
+            time.sleep(1)
+            status.empty()
+            return model, name
+        except Exception as e:
+            # If the "Live" model rejects standard calls, we catch it here and move to the next
+            print(f"Skipping {name}: {e}")
+            continue
+            
+    status.error("❌ Could not connect. Please check your API Key.")
+    return None, None
 
-# --- 2. DIRECT CONNECTION (No hiding errors) ---
-# We try to connect to the standard model and show the REAL error if it fails.
-try:
-    model_name = "gemini-1.5-flash"
-    model = genai.GenerativeModel(model_name)
-    # Test ping
-    model.generate_content("Hi")
-except Exception as e:
-    st.error(f"❌ **Connection Error:** {e}")
-    st.error("This is the exact error from Google. Please share this.")
+model, model_name = get_model()
+
+if not model:
     st.stop()
 
 # --- 3. SESSION STATE ---
@@ -55,7 +74,7 @@ if "scenario" not in st.session_state: st.session_state.scenario = None
 if "feedback" not in st.session_state: st.session_state.feedback = None
 if "last_audio_id" not in st.session_state: st.session_state.last_audio_id = None
 if "recording_count" not in st.session_state: st.session_state.recording_count = 0
-MAX_RECORDINGS = 10
+MAX_RECORDINGS = 20 # Increased limit since you have unlimited quota!
 
 # --- 4. SCENARIOS ---
 SCENARIOS = {
@@ -79,6 +98,7 @@ SCENARIOS = {
 # --- 5. HELPER FUNCTIONS ---
 def transcribe_audio(audio_bytes):
     try:
+        # Prompt explicitly asks for text, even from native audio models
         prompt = "Transcribe this German audio exactly. Output ONLY the German text."
         response = model.generate_content([
             prompt,
@@ -86,7 +106,7 @@ def transcribe_audio(audio_bytes):
         ])
         return response.text.strip()
     except Exception as e:
-        st.error(f"Transcription Error: {e}")
+        st.error(f"Transcription Error ({model_name}): {e}")
         return None
 
 def get_teacher_response(user_text, scenario_key):
@@ -135,7 +155,8 @@ def text_to_speech_free(text):
         return None
 
 # --- 6. MAIN UI ---
-st.title("🩺 CareLingo")
+st.title("⚡ CareLingo Live")
+# st.caption(f"Using Brain: {model_name}") 
 
 if not st.session_state.scenario:
     st.info("👈 Select a scenario to start.")
@@ -149,7 +170,7 @@ else:
     scen = SCENARIOS[st.session_state.scenario]
     st.subheader(f"{scen['icon']} {st.session_state.scenario}")
     
-    # Progress Bar
+    # Progress Bar (Increased to 20)
     usage = st.session_state.recording_count
     st.progress(usage / MAX_RECORDINGS, text=f"Session Limit: {usage}/{MAX_RECORDINGS}")
 
@@ -184,7 +205,7 @@ else:
                 st.session_state.last_audio_id = audio_id
                 st.session_state.recording_count += 1
                 
-                with st.spinner("Listening..."):
+                with st.spinner(f"Listening with {model_name}..."):
                     user_text = transcribe_audio(audio_bytes)
                 
                 if user_text:
