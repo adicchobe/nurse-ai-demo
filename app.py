@@ -123,46 +123,57 @@ if "last_audio_id" not in st.session_state: st.session_state.last_audio_id = Non
 if "turn_count" not in st.session_state: st.session_state.turn_count = 0
 MAX_TURNS = 5
 
-# --- 7. LOGIC (FIXED) ---
+# --- UPDATED LOGIC TO PREVENT AUDIO CUTOFF ---
+
+def clean_text_for_speech(text):
+    # 1. Remove all markdown (asterisks, bold, etc)
+    text = text.replace("*", "").replace("#", "").replace("_", "")
+    # 2. Remove role labels like "Patient:" or "Herr Müller:"
+    text = re.sub(r'^.*?:', '', text)
+    # 3. Remove text in brackets (often acting instructions like [coughs])
+    text = re.sub(r'\[.*?\]', '', text)
+    text = re.sub(r'\(.*?\)', '', text)
+    # 4. Remove emojis
+    text = text.encode('ascii', 'ignore').decode('ascii')
+    return text.strip()
+
 def process_audio(audio_bytes, scenario_key, history):
     try:
-        # 1. Transcribe
+        # ... (Transcription part stays the same) ...
         prompt = "Transcribe this German audio exactly. Output ONLY the German text."
         resp = model.generate_content([prompt, {"mime_type": "audio/mp3", "data": audio_bytes}])
         text = resp.text.strip()
         
-        # 2. History
         history_txt = "\n".join([f"{m['role']}: {m['content']}" for m in history])
         scen = SCENARIOS[scenario_key]
         
-        # 3. Analyze (Prompt Engineered to fix Grading Issue)
+        # UPDATED PROMPT: Added constraint for SHORT replies
         analysis_prompt = f"""
         You are a German Medical Roleplay Simulation.
         
         SCENARIO:
         - Role: {scen['role']} (Patient)
-        - Student (User) Task: {scen['task']}
         - Context: {scen['desc']}
         
         HISTORY:
         {history_txt}
         
-        CURRENT USER AUDIO INPUT: "{text}"
+        CURRENT USER AUDIO: "{text}"
         
         INSTRUCTIONS:
-        1. Reply naturally as the Patient. (If context says patient is rude/scared, BE rude/scared).
-        2. Grade ONLY THE USER (The Nurse). Do NOT grade the Patient's behavior.
-        3. Scores must be INTEGERS from 1 to 10.
+        1. Reply naturally as the Patient. **KEEP REPLY UNDER 2 SENTENCES.** (This prevents audio cutoff).
+        2. Grade ONLY THE USER (The Nurse).
+        3. Scores must be INTEGERS (1-10).
         
         OUTPUT JSON:
         {{
-            "response_text": "German reply as patient",
+            "response_text": "German reply (Max 2 sentences)",
             "feedback": {{
                 "grammar": (Integer 1-10), 
-                "politeness": (Integer 1-10 regarding professional manner), 
-                "medical": (Integer 1-10 regarding goal achievement), 
-                "critique": "Specific advice for the Nurse in English", 
-                "better_phrase": "Corrected German phrase for the Nurse"
+                "politeness": (Integer 1-10), 
+                "medical": (Integer 1-10), 
+                "critique": "Advice in English", 
+                "better_phrase": "Correction in German"
             }}
         }}
         """
@@ -170,27 +181,6 @@ def process_audio(audio_bytes, scenario_key, history):
         return text, json.loads(res.text)
     except Exception as e:
         return None, None
-
-def clean_text_for_speech(text):
-    # Remove markdown bold/italic
-    text = text.replace("*", "")
-    # Remove role labels like "Herr Müller:" or "Patient:"
-    text = re.sub(r'^.*?:', '', text)
-    # Remove emojis (they break some TTS readers)
-    text = text.encode('ascii', 'ignore').decode('ascii')
-    return text.strip()
-
-def text_to_speech(text):
-    try:
-        clean = clean_text_for_speech(text)
-        # slow=False ensures normal speed, lang='de' for German
-        tts = gTTS(text=clean, lang='de', slow=False)
-        buf = io.BytesIO()
-        tts.write_to_fp(buf)
-        buf.seek(0)
-        return buf
-    except:
-        return None
 
 # --- 8. UI FLOW ---
 
