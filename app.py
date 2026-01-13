@@ -232,4 +232,59 @@ else:
     # 2. Context
     if not st.session_state.messages:
         with st.container(border=True):
-            st.
+            st.markdown(f"**GOAL:** {curr['task']}")
+
+    # 3. Chat
+    for msg in st.session_state.messages:
+        role = "assistant" if msg["role"] == "assistant" else "user"
+        avatar = curr['avatar'] if role == "assistant" else "🧑‍⚕️"
+        with st.chat_message(role, avatar=avatar):
+            st.write(msg["content"])
+
+    # 4. Feedback (Now displaying Integers)
+    if st.session_state.feedback:
+        f = st.session_state.feedback
+        with st.expander("📝 Instructor Feedback", expanded=True):
+            cols = st.columns(3)
+            # Ensure we display numbers, default to 0 if missing
+            cols[0].metric("Grammar", f"{f.get('grammar', 0)}/10")
+            cols[1].metric("Politeness", f"{f.get('politeness', 0)}/10")
+            cols[2].metric("Medical", f"{f.get('medical', 0)}/10")
+            st.warning(f"💡 {f.get('critique')}")
+            st.success(f"🗣️ Better: \"{f.get('better_phrase')}\"")
+            if st.button("↺ Retry Turn"):
+                st.session_state.messages.pop()
+                st.session_state.messages.pop()
+                st.session_state.feedback = None
+                st.session_state.turn_count -= 1
+                st.rerun()
+
+    # 5. RECORDER
+    if st.session_state.turn_count < MAX_TURNS:
+        st.markdown("---")
+        st.markdown('<div class="recorder-label">Click on the 🎙️ icon below to converse and get feedback</div>', unsafe_allow_html=True)
+        
+        audio_val = st.audio_input("Record", label_visibility="collapsed")
+        
+        if audio_val:
+            if st.session_state.last_audio_id != audio_val.file_id:
+                st.session_state.last_audio_id = audio_val.file_id
+                
+                with st.spinner("🧠 Analyzing speech..."):
+                    user_text, ai_data = process_audio(audio_val.read(), st.session_state.scenario, st.session_state.messages)
+                    
+                    if user_text and ai_data:
+                        st.session_state.turn_count += 1
+                        st.session_state.messages.append({"role": "user", "content": user_text})
+                        st.session_state.feedback = ai_data["feedback"]
+                        st.session_state.messages.append({"role": "assistant", "content": ai_data["response_text"]})
+                        
+                        mp3 = text_to_speech(ai_data["response_text"])
+                        if mp3: st.audio(mp3, format="audio/mp3", autoplay=True)
+                        time.sleep(0.5)
+                        st.rerun()
+    else:
+        st.success("✅ Simulation Complete!")
+        if st.button("Start New"):
+            st.session_state.clear()
+            st.rerun()
