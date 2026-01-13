@@ -166,3 +166,126 @@ def process_audio(audio_bytes, scenario_key):
             }}
         }}
         """
+        res = model.generate_content(f"{analysis_prompt}\nUser: {text}", generation_config={"response_mime_type": "application/json"})
+        data = json.loads(res.text)
+        return text, data
+    except Exception as e:
+        return None, str(e)
+
+def text_to_speech(text):
+    try:
+        tts = gTTS(text=text, lang='de')
+        buf = io.BytesIO()
+        tts.write_to_fp(buf)
+        buf.seek(0)
+        return buf
+    except:
+        return None
+
+# --- 8. UI FLOW ---
+
+# === SCREEN 1: SCENARIO SELECTION ===
+if not st.session_state.scenario:
+    st.markdown("### 👋 Welcome, Nurse.")
+    st.info("Choose a scenario below to begin your language practice shift.")
+    
+    # 3 Columns for Cards
+    c1, c2, c3 = st.columns(3)
+    
+    with c1:
+        # We put the button first, acting as the entire card click
+        if st.button(f"{SCENARIOS['Admission']['icon']} Start Admission"):
+            st.session_state.scenario = "Admission"
+            st.rerun()
+        st.markdown(f"<div class='scenario-desc'>{SCENARIOS['Admission']['desc']}</div>", unsafe_allow_html=True)
+        
+    with c2:
+        if st.button(f"{SCENARIOS['Medication']['icon']} Start Medication"):
+            st.session_state.scenario = "Medication"
+            st.rerun()
+        st.markdown(f"<div class='scenario-desc'>{SCENARIOS['Medication']['desc']}</div>", unsafe_allow_html=True)
+        
+    with c3:
+        if st.button(f"{SCENARIOS['Emergency']['icon']} Start Emergency"):
+            st.session_state.scenario = "Emergency"
+            st.rerun()
+        st.markdown(f"<div class='scenario-desc'>{SCENARIOS['Emergency']['desc']}</div>", unsafe_allow_html=True)
+
+# === SCREEN 2: PRACTICE ROOM ===
+else:
+    curr = SCENARIOS[st.session_state.scenario]
+    
+    # Navigation
+    c1, c2 = st.columns([1, 4])
+    with c1:
+        if st.button("← Leave Room"):
+            st.session_state.scenario = None
+            st.session_state.messages = []
+            st.session_state.feedback = None
+            st.rerun()
+    with c2:
+        st.markdown(f"**Current Task:** {curr['title']}")
+    
+    st.divider()
+
+    # Chat History
+    if not st.session_state.messages:
+        st.markdown(f"""
+        <div style='text-align: center; opacity: 0.7; padding: 20px; border-radius: 10px; border: 1px dashed gray;'>
+            <h3>{curr['icon']} You are now in the room.</h3>
+            <p><strong>Goal:</strong> {curr['goal']}</p>
+            <p>Tap the microphone below and introduce yourself in German.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    # Feedback Section
+    if st.session_state.feedback:
+        f = st.session_state.feedback
+        with st.expander("📊 Instructor Feedback", expanded=True):
+            cols = st.columns(3)
+            cols[0].metric("Grammar", f"{f.get('grammar',0)}/10")
+            cols[1].metric("Politeness", f"{f.get('politeness',0)}/10")
+            cols[2].metric("Medical", f"{f.get('medical',0)}/10")
+            
+            st.info(f"💡 {f.get('critique', '')}")
+            st.success(f"🗣️ Better: \"{f.get('better_phrase', '')}\"")
+            
+            st.markdown("---")
+            if st.button("↩️ Retry Last Turn (Practice Again)"):
+                if len(st.session_state.messages) >= 2:
+                    st.session_state.messages.pop()
+                    st.session_state.messages.pop()
+                    st.session_state.feedback = None
+                    st.rerun()
+
+    # Audio Input (The Hero Action)
+    st.markdown("###")
+    st.markdown("<p class='recorder-cue'>👇 Tap to Speak & Get Feedback</p>", unsafe_allow_html=True)
+    audio_val = st.audio_input("Record your response", label_visibility="collapsed")
+
+    if audio_val:
+        if st.session_state.last_audio_id != audio_val.file_id:
+            st.session_state.last_audio_id = audio_val.file_id
+            
+            with st.status("🔄 Listening & Analyzing...", expanded=True) as status:
+                st.write(f"Connecting to **{model_choice}**...")
+                
+                user_text, ai_data = process_audio(audio_val.read(), st.session_state.scenario)
+                
+                if user_text and isinstance(ai_data, dict):
+                    status.update(label="Response Received!", state="complete", expanded=False)
+                    st.session_state.messages.append({"role": "user", "content": user_text})
+                    st.session_state.feedback = ai_data["feedback"]
+                    st.session_state.messages.append({"role": "assistant", "content": ai_data["response_text"]})
+                    
+                    mp3 = text_to_speech(ai_data["response_text"])
+                    if mp3: st.audio(mp3, format="audio/mp3", autoplay=True)
+                    time.sleep(0.5)
+                    st.rerun()
+                else:
+                    status.update(label="Connection Failed", state="error")
+                    st.error(f"Error: {ai_data}")
