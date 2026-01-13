@@ -74,7 +74,8 @@ if "APP_PASSWORD" in st.secrets:
     if not st.session_state.authenticated:
         st.markdown("<br><h1 style='text-align: center;'>🔐 CareLingo Login</h1>", unsafe_allow_html=True)
         pwd = st.text_input("Password", type="password")
-        if st.button("Start Shift"):
+        # UPDATED: Button text as requested
+        if st.button("Start Practice!"):
             if pwd == st.secrets["APP_PASSWORD"]:
                 st.session_state.authenticated = True
                 st.rerun()
@@ -88,11 +89,13 @@ st.title("🩺 CareLingo")
 with st.expander("⚙️ System Settings", expanded=False):
     c1, c2 = st.columns([3, 1])
     with c1:
+        # UPDATED: Model list based on your Billing Screenshot
         model_choice = st.selectbox("Active AI Brain:", [
-            "gemini-2.5-flash-native-audio-dialog",
-            "gemini-2.5-flash",
-            "gemini-2.0-flash-exp",
-            "gemini-1.5-flash"
+            "gemini-2.5-flash-lite", # Best Available (Green in screenshot)
+            "gemini-3-flash",        # High Performance (Green in screenshot)
+            "gemini-2.0-flash-exp",  # Reliable Backup
+            "gemini-2.5-flash",      # (Red in screenshot - keep as fallback)
+            "gemini-1.5-flash"       # Standard
         ])
     with c2:
         st.write("")
@@ -132,7 +135,7 @@ SCENARIOS = {
     }
 }
 
-# --- 7. LOGIC (NOW WITH MEMORY) ---
+# --- 7. LOGIC (WITH MEMORY) ---
 def process_audio(audio_bytes, scenario_key, history_messages):
     try:
         # 1. Transcribe Audio
@@ -141,7 +144,6 @@ def process_audio(audio_bytes, scenario_key, history_messages):
         text = resp.text.strip()
         
         # 2. Build Context String from History
-        # We format previous messages so the AI remembers the conversation
         context_str = ""
         for msg in history_messages:
             role_label = "Nurse (User)" if msg["role"] == "user" else "Patient"
