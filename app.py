@@ -4,25 +4,24 @@ from gtts import gTTS
 import os
 import json
 import io
+import time
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
 
-# --- 2. CLEAN & SAFE STYLING ---
+# --- 2. CLEAN STYLING ---
 st.markdown("""
 <style>
-    /* Card Style */
     .scenario-card {
         border: 1px solid #e0e0e0;
-        border-radius: 10px;
-        padding: 20px;
+        border-radius: 12px;
+        padding: 1.5rem;
         text-align: center;
-        margin-bottom: 10px;
+        margin-bottom: 1rem;
+        background-color: transparent;
     }
-    /* Hide Input Hints */
     div[data-testid="InputInstructions"] > span { display: none; }
-    /* Full Width Buttons */
-    .stButton button { width: 100%; }
+    .stButton button { width: 100%; font-weight: 600; border-radius: 8px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -30,7 +29,7 @@ st.markdown("""
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    st.error("🚨 API Key Missing.")
+    st.error("🚨 API Key Missing. Please check Streamlit Secrets.")
     st.stop()
 
 if "APP_PASSWORD" in st.secrets:
@@ -40,7 +39,7 @@ if "APP_PASSWORD" in st.secrets:
     if not st.session_state.authenticated:
         st.markdown("### 🔒 Login")
         pwd = st.text_input("Password", type="password")
-        if st.button("Login"):
+        if st.button("Enter"):
             if pwd == st.secrets["APP_PASSWORD"]:
                 st.session_state.authenticated = True
                 st.rerun()
@@ -48,12 +47,28 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect Password")
         st.stop()
 
-# --- 4. MODEL SETUP (The Fix) ---
-# We force the experimental model which usually has a separate, fresh quota.
-def get_model():
-    return genai.GenerativeModel("gemini-2.0-flash-exp")
+# --- 4. MODEL DROPDOWN (The Fix) ---
+# We do not auto-connect. We let YOU choose.
+with st.sidebar:
+    st.header("⚙️ Settings")
+    model_choice = st.selectbox(
+        "Select AI Model:",
+        [
+            "gemini-2.0-flash-exp",     # Try this first (New quota)
+            "gemini-1.5-flash",         # Standard
+            "gemini-1.5-flash-8b",      # Faster/Cheaper
+            "gemini-1.5-pro"            # Smarter (Low quota)
+        ]
+    )
+    st.info(f"Using: **{model_choice}**")
+    
+    if st.button("🔄 Reset Conversation"):
+        st.session_state.messages = []
+        st.session_state.feedback = None
+        st.rerun()
 
-model = get_model()
+# Initialize the chosen model
+model = genai.GenerativeModel(model_choice)
 
 # --- 5. SESSION STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -92,7 +107,7 @@ def process_audio(audio_bytes, scenario_key):
         data = json.loads(res.text)
         return text, data
     except Exception as e:
-        return None, None
+        return None, str(e)
 
 def text_to_speech(text):
     try:
@@ -155,20 +170,25 @@ else:
     audio_val = st.audio_input("Tap to Speak...")
 
     if audio_val:
-        # Fix: Ensure we don't re-process the same audio file
         if st.session_state.last_audio_id != audio_val.file_id:
             st.session_state.last_audio_id = audio_val.file_id
             
-            with st.spinner("Processing..."):
+            with st.status("🔄 Processing...", expanded=True) as status:
+                st.write(f"Connecting to **{model_choice}**...")
+                
                 user_text, ai_data = process_audio(audio_val.read(), st.session_state.scenario)
                 
-                if user_text and ai_data:
+                if user_text and isinstance(ai_data, dict):
+                    status.update(label="Complete!", state="complete", expanded=False)
                     st.session_state.messages.append({"role": "user", "content": user_text})
                     st.session_state.feedback = ai_data["feedback"]
                     st.session_state.messages.append({"role": "assistant", "content": ai_data["response_text"]})
                     
                     mp3 = text_to_speech(ai_data["response_text"])
                     if mp3: st.audio(mp3, format="audio/mp3", autoplay=True)
+                    time.sleep(1)
                     st.rerun()
                 else:
-                    st.error("Connection Error. Your API Key quota might be exceeded.")
+                    status.update(label="Failed", state="error")
+                    st.error(f"Error with **{model_choice}**: {ai_data}")
+                    st.caption("Try selecting a different model in the Sidebar 👈")
