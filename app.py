@@ -18,7 +18,6 @@ st.markdown("""
         padding: 1.5rem;
         text-align: center;
         margin-bottom: 1rem;
-        background-color: transparent;
     }
     div[data-testid="InputInstructions"] > span { display: none; }
     .stButton button { width: 100%; font-weight: 600; border-radius: 8px; }
@@ -29,7 +28,7 @@ st.markdown("""
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    st.error("🚨 API Key Missing. Please check Streamlit Secrets.")
+    st.error("🚨 API Key Missing.")
     st.stop()
 
 if "APP_PASSWORD" in st.secrets:
@@ -47,27 +46,40 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect Password")
         st.stop()
 
-# --- 4. MODEL DROPDOWN (The Fix) ---
-# We do not auto-connect. We let YOU choose.
+# --- 4. SIDEBAR CONTROLS ---
 with st.sidebar:
     st.header("⚙️ Settings")
+    
+    # 1. Model Selector (Based on your Screenshot)
     model_choice = st.selectbox(
         "Select AI Model:",
         [
-            "gemini-2.0-flash-exp",     # Try this first (New quota)
-            "gemini-1.5-flash",         # Standard
-            "gemini-1.5-flash-8b",      # Faster/Cheaper
-            "gemini-1.5-pro"            # Smarter (Low quota)
+            "gemini-2.5-flash-native-audio-dialog", # Your "Unlimited" finding
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+            "gemini-3-flash",
+            "gemini-2.0-flash-exp" # Kept as backup just in case
         ]
     )
-    st.info(f"Using: **{model_choice}**")
+    st.info(f"Targeting: **{model_choice}**")
     
-    if st.button("🔄 Reset Conversation"):
+    st.divider()
+    
+    # 2. The Missing Feature: RETRY
+    if st.button("↩️ Retry Last Turn"):
+        if len(st.session_state.messages) >= 2:
+            st.session_state.messages.pop() # Remove AI response
+            st.session_state.messages.pop() # Remove User input
+            st.session_state.feedback = None
+            st.rerun()
+            
+    # 3. Reset
+    if st.button("🗑️ Reset Conversation"):
         st.session_state.messages = []
         st.session_state.feedback = None
         st.rerun()
 
-# Initialize the chosen model
+# Initialize Model
 model = genai.GenerativeModel(model_choice)
 
 # --- 5. SESSION STATE ---
@@ -191,4 +203,4 @@ else:
                 else:
                     status.update(label="Failed", state="error")
                     st.error(f"Error with **{model_choice}**: {ai_data}")
-                    st.caption("Try selecting a different model in the Sidebar 👈")
+                    st.caption("Tip: Select a different model in the Sidebar if this one is offline.")
