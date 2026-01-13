@@ -8,27 +8,21 @@ import io
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
 
-# --- 2. CLEAN STYLING (No risky overrides) ---
+# --- 2. CLEAN & SAFE STYLING ---
 st.markdown("""
 <style>
-    /* Clean Card Style for Scenarios */
+    /* Card Style */
     .scenario-card {
-        border: 1px solid rgba(128, 128, 128, 0.2);
-        border-radius: 12px;
-        padding: 1rem;
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 20px;
         text-align: center;
         margin-bottom: 10px;
     }
-    
-    /* Hide the 'Press Enter' hint on inputs */
+    /* Hide Input Hints */
     div[data-testid="InputInstructions"] > span { display: none; }
-    
-    /* Make buttons look good */
-    .stButton button {
-        width: 100%;
-        font-weight: 600;
-        border-radius: 8px;
-    }
+    /* Full Width Buttons */
+    .stButton button { width: 100%; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -36,7 +30,7 @@ st.markdown("""
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
-    st.error("🚨 System Error: API Key Missing.")
+    st.error("🚨 API Key Missing.")
     st.stop()
 
 if "APP_PASSWORD" in st.secrets:
@@ -44,22 +38,21 @@ if "APP_PASSWORD" in st.secrets:
         st.session_state.authenticated = False
     
     if not st.session_state.authenticated:
-        st.title("🔒 Login")
-        with st.form("login_form"):
-            pwd = st.text_input("Password", type="password")
-            if st.form_submit_button("Login"):
-                if pwd == st.secrets["APP_PASSWORD"]:
-                    st.session_state.authenticated = True
-                    st.rerun()
-                else:
-                    st.error("Incorrect Password")
+        st.markdown("### 🔒 Login")
+        pwd = st.text_input("Password", type="password")
+        if st.button("Login"):
+            if pwd == st.secrets["APP_PASSWORD"]:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Incorrect Password")
         st.stop()
 
-# --- 4. LAZY MODEL LOADING (Prevents Startup Crash) ---
-# We do NOT ping the server here. We just set up the object.
+# --- 4. MODEL SETUP (NO STARTUP PING) ---
+# We use 2.0-flash-exp because your screenshot shows it is available (Green).
+# We do NOT test the connection here to prevent startup crashes.
 def get_model():
-    # Primary model (Stable)
-    return genai.GenerativeModel("gemini-1.5-flash")
+    return genai.GenerativeModel("gemini-2.0-flash-exp")
 
 model = get_model()
 
@@ -71,40 +64,36 @@ if "last_audio_id" not in st.session_state: st.session_state.last_audio_id = Non
 
 # --- 6. SCENARIOS ---
 SCENARIOS = {
-    "Admission": {"icon": "📋", "title": "Patient Admission", "role": "Herr Müller (Anxious)", "goal": "Collect medical history."},
-    "Medication": {"icon": "💊", "title": "Medication Refusal", "role": "Frau Schneider (Stubborn)", "goal": "Explain why meds are needed."},
-    "Emergency": {"icon": "🚨", "title": "Emergency Triage", "role": "Visitor (Husband collapsed)", "goal": "Get vitals fast."}
+    "Admission": {"icon": "📋", "title": "Admission", "role": "Herr Müller", "goal": "Collect medical history."},
+    "Medication": {"icon": "💊", "title": "Medication", "role": "Frau Schneider", "goal": "Explain why meds are needed."},
+    "Emergency": {"icon": "🚨", "title": "Emergency", "role": "Visitor", "goal": "Get vitals fast."}
 }
 
 # --- 7. LOGIC ---
 def process_audio(audio_bytes, scenario_key):
-    # 1. Transcribe
     try:
+        # 1. Transcribe
         prompt = "Transcribe this German audio exactly. Output ONLY the German text."
-        # Note: We call the API here for the first time
         resp = model.generate_content([prompt, {"mime_type": "audio/mp3", "data": audio_bytes}])
         text = resp.text.strip()
-    except Exception as e:
-        return None, f"Transcription Error: {str(e)}"
-
-    # 2. Analyze
-    scen = SCENARIOS[scenario_key]
-    analysis_prompt = f"""
-    Act as German Tutor. Role: {scen['role']}. Goal: {scen['goal']}.
-    Output JSON: {{
-        "response_text": "German reply",
-        "feedback": {{
-            "grammar": (1-10), "politeness": (1-10), "medical": (1-10),
-            "critique": "Tip in English", "better_phrase": "German correction"
+        
+        # 2. Analyze
+        scen = SCENARIOS[scenario_key]
+        analysis_prompt = f"""
+        Act as German Tutor. Role: {scen['role']}. Goal: {scen['goal']}.
+        Output JSON: {{
+            "response_text": "German reply",
+            "feedback": {{
+                "grammar": (1-10), "politeness": (1-10), "medical": (1-10),
+                "critique": "Tip in English", "better_phrase": "German correction"
+            }}
         }}
-    }}
-    """
-    try:
+        """
         res = model.generate_content(f"{analysis_prompt}\nUser: {text}", generation_config={"response_mime_type": "application/json"})
         data = json.loads(res.text)
         return text, data
     except Exception as e:
-        return text, None
+        return None, None
 
 def text_to_speech(text):
     try:
@@ -116,16 +105,70 @@ def text_to_speech(text):
     except:
         return None
 
-# --- 8. MAIN UI ---
+# --- 8. UI ---
 st.title("🩺 CareLingo")
 
-# SCENARIO SELECTOR
 if not st.session_state.scenario:
     st.subheader("Select Scenario")
-    
     c1, c2, c3 = st.columns(3)
-    
     with c1:
-        st.markdown(f"<div class='scenario-card' style='font-size:3rem'>{SCENARIOS['Admission']['icon']}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='scenario-card'><h1>{SCENARIOS['Admission']['icon']}</h1></div>", unsafe_allow_html=True)
         if st.button("Admission"):
-            st.session
+            st.session_state.scenario = "Admission"
+            st.rerun()
+    with c2:
+        st.markdown(f"<div class='scenario-card'><h1>{SCENARIOS['Medication']['icon']}</h1></div>", unsafe_allow_html=True)
+        if st.button("Medication"):
+            st.session_state.scenario = "Medication"
+            st.rerun()
+    with c3:
+        st.markdown(f"<div class='scenario-card'><h1>{SCENARIOS['Emergency']['icon']}</h1></div>", unsafe_allow_html=True)
+        if st.button("Emergency"):
+            st.session_state.scenario = "Emergency"
+            st.rerun()
+
+else:
+    curr = SCENARIOS[st.session_state.scenario]
+    if st.button("← Back"):
+        st.session_state.scenario = None
+        st.session_state.messages = []
+        st.session_state.feedback = None
+        st.rerun()
+
+    st.markdown(f"### {curr['title']}")
+    st.divider()
+
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.write(msg["content"])
+
+    if st.session_state.feedback:
+        f = st.session_state.feedback
+        with st.expander("📊 Teacher's Feedback", expanded=True):
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Grammar", f"{f.get('grammar',0)}/10")
+            c2.metric("Politeness", f"{f.get('politeness',0)}/10")
+            c3.metric("Medical", f"{f.get('medical',0)}/10")
+            st.info(f"💡 {f.get('critique', '')}")
+            st.success(f"🗣️ Better: \"{f.get('better_phrase', '')}\"")
+
+    st.markdown("###")
+    audio_val = st.audio_input("Tap to Speak...")
+
+    if audio_val:
+        if st.session_state.last_audio_id != audio_val.file_id:
+            st.session_state.last_audio_id = audio_val.file_id
+            
+            with st.spinner("Processing..."):
+                user_text, ai_data = process_audio(audio_val.read(), st.session_state.scenario)
+                
+                if user_text and ai_data:
+                    st.session_state.messages.append({"role": "user", "content": user_text})
+                    st.session_state.feedback = ai_data["feedback"]
+                    st.session_state.messages.append({"role": "assistant", "content": ai_data["response_text"]})
+                    
+                    mp3 = text_to_speech(ai_data["response_text"])
+                    if mp3: st.audio(mp3, format="audio/mp3", autoplay=True)
+                    st.rerun()
+                else:
+                    st.error("Connection Error. Please try again.")
