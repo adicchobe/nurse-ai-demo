@@ -173,4 +173,90 @@ if not st.session_state.scenario:
     c1, c2, c3 = st.columns(3)
     
     with c1:
-        st.markdown(f"<div class='
+        st.markdown(f"<div class='scenario-card'><h1>{SCENARIOS['Admission']['icon']}</h1><h3>Admission</h3></div>", unsafe_allow_html=True)
+        if st.button("Start Admission"):
+            st.session_state.scenario = "Admission"
+            st.rerun()
+
+    with c2:
+        st.markdown(f"<div class='scenario-card'><h1>{SCENARIOS['Medication']['icon']}</h1><h3>Medication</h3></div>", unsafe_allow_html=True)
+        if st.button("Start Medication"):
+            st.session_state.scenario = "Medication"
+            st.rerun()
+
+    with c3:
+        st.markdown(f"<div class='scenario-card'><h1>{SCENARIOS['Emergency']['icon']}</h1><h3>Emergency</h3></div>", unsafe_allow_html=True)
+        if st.button("Start Emergency"):
+            st.session_state.scenario = "Emergency"
+            st.rerun()
+
+# ACTIVE SESSION SCREEN
+else:
+    curr = SCENARIOS[st.session_state.scenario]
+    
+    # Header & Navigation
+    col_nav, col_title = st.columns([1, 4])
+    with col_nav:
+        if st.button("← Exit"):
+            st.session_state.scenario = None
+            st.session_state.messages = []
+            st.session_state.feedback = None
+            st.rerun()
+    with col_title:
+        st.markdown(f"**{curr['title']}**")
+        st.caption(f"🎯 Goal: {curr['goal']}")
+
+    st.divider()
+
+    # Chat History
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🤖"):
+            st.write(msg["content"])
+
+    # Feedback Card (Visual Appeal)
+    if st.session_state.feedback:
+        f = st.session_state.feedback
+        with st.expander("📊 Performance Analysis", expanded=True):
+            cols = st.columns(3)
+            cols[0].metric("Grammar", f"{f.get('grammar',0)}/10")
+            cols[1].metric("Politeness", f"{f.get('politeness',0)}/10")
+            cols[2].metric("Medical", f"{f.get('medical',0)}/10")
+            st.info(f"💡 **Tip:** {f.get('critique', 'N/A')}")
+            st.success(f"🗣️ **Better:** \"{f.get('better_phrase', 'N/A')}\"")
+
+    # Audio Input (The "Action" Area)
+    st.markdown("###")
+    audio_val = st.audio_input("Tap to Speak...")
+    
+    if audio_val:
+        # Check for new recording
+        current_id = hash(audio_val.getvalue())
+        if current_id != st.session_state.last_audio_id:
+            st.session_state.last_audio_id = current_id
+            
+            # --- THE FIX: VISUAL STATUS ---
+            # This box proves to the user/interviewer that the app is working
+            with st.status("✅ Audio captured! Processing...", expanded=True) as status:
+                
+                st.write("📝 Transcribing audio...")
+                user_text, ai_data = process_audio(audio_val.read(), st.session_state.scenario)
+                
+                if user_text and ai_data:
+                    st.write("🧠 Generating feedback...")
+                    # Update State
+                    st.session_state.messages.append({"role": "user", "content": user_text})
+                    st.session_state.feedback = ai_data["feedback"]
+                    st.session_state.messages.append({"role": "assistant", "content": ai_data["response_text"]})
+                    
+                    # Audio Reply
+                    mp3 = text_to_speech(ai_data["response_text"])
+                    status.update(label="Complete!", state="complete", expanded=False)
+                    
+                    if mp3:
+                        st.audio(mp3, format="audio/mp3", autoplay=True)
+                    
+                    time.sleep(1) # Visual pause
+                    st.rerun()
+                else:
+                    status.update(label="Error connecting to AI", state="error")
+                    st.error("Please try again. API Key may be busy.")
