@@ -9,76 +9,40 @@ import time
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
 
-# --- 2. FINAL POLISH CSS (Theme-Aware & Aligned) ---
+# --- 2. MINIMAL CSS (Only for polish) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-    /* --- ALIGNMENT ENGINE --- */
-    /* This ensures buttons align perfectly with cards in the grid */
-    div[data-testid="column"] {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-    }
-    
-    /* --- SCENARIO CARDS --- */
-    .scenario-card {
-        padding: 10px;
-        text-align: center;
-        margin-bottom: 10px;
-    }
-    .card-icon { font-size: 3rem; margin-bottom: 10px; }
-    .card-title { font-weight: 700; font-size: 1.1rem; margin-bottom: 8px; }
-    .card-desc { font-size: 0.9rem; opacity: 0.8; line-height: 1.4; min-height: 60px; }
-
-    /* --- BUTTONS (Standardized) --- */
+    /* Make buttons full width and interactive */
     div.stButton > button {
         width: 100%;
         border-radius: 8px;
         font-weight: 600;
-        border: 1px solid rgba(128, 128, 128, 0.2);
-        padding: 0.5rem 1rem;
-        background-color: transparent; /* Adaptive to theme */
         transition: all 0.2s;
     }
-    div.stButton > button:hover {
-        border-color: #FF4B4B;
-        color: #FF4B4B;
-        background-color: rgba(255, 75, 75, 0.05);
-        transform: translateY(-2px);
-    }
-
-    /* --- ACTIVE SCENARIO HEADER --- */
-    .mission-box {
-        background-color: rgba(59, 130, 246, 0.1); /* Light Blue Tint */
-        border-left: 5px solid #3b82f6;
-        padding: 15px;
-        border-radius: 8px;
-        margin-bottom: 20px;
-    }
     
-    /* --- CONTROL PANEL (Recorder Zone) --- */
-    .control-panel {
-        margin-top: 30px;
-        padding: 20px;
-        border-top: 1px solid rgba(128,128,128, 0.2);
-        background-color: rgba(128,128,128, 0.05); /* Subtle gray background */
-        border-radius: 12px;
-        text-align: center;
-    }
-    .panel-label {
-        font-weight: 700;
-        text-transform: uppercase;
-        font-size: 0.8rem;
-        letter-spacing: 1px;
-        margin-bottom: 10px;
-        opacity: 0.7;
+    /* Helper to ensure descriptions take up same space */
+    .scenario-desc-box {
+        min-height: 80px; 
+        font-size: 0.9rem;
+        opacity: 0.8;
+        line-height: 1.5;
     }
 
-    /* UTILS */
+    /* Hide default input instructions */
     div[data-testid="InputInstructions"] > span { display: none; }
+    
+    /* The Recorder Instruction Text */
+    .recorder-label {
+        font-weight: 600;
+        color: #FF4B4B; 
+        margin-bottom: 5px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -111,7 +75,6 @@ st.title("🩺 CareLingo")
 with st.expander("⚙️ Settings", expanded=False):
     c1, c2 = st.columns([3, 1])
     with c1:
-        # Green Bar models from your screenshot
         model_choice = st.selectbox("AI Model:", [
             "gemini-2.5-flash-lite", 
             "gemini-3-flash", 
@@ -126,7 +89,7 @@ with st.expander("⚙️ Settings", expanded=False):
 
 model = genai.GenerativeModel(model_choice)
 
-# --- 5. SCENARIO DATA (Rich Context) ---
+# --- 5. SCENARIO DATA ---
 SCENARIOS = {
     "Admission": {
         "title": "Initial Admission",
@@ -196,12 +159,11 @@ def text_to_speech(text):
 
 # --- 8. UI FLOW ---
 
-# === SCREEN 1: SELECTION (Grid Layout) ===
+# === SCREEN 1: SELECTION (Native Containers = Perfect Alignment) ===
 if not st.session_state.scenario:
-    st.markdown("### 👋 Select a Practice Scenario")
+    st.subheader("Select a Practice Scenario")
     st.info("Each scenario is a 5-turn micro-simulation.")
     
-    # We use containers to ensure cards align perfectly
     cols = st.columns(3)
     keys = list(SCENARIOS.keys())
     
@@ -209,16 +171,14 @@ if not st.session_state.scenario:
         key = keys[i]
         data = SCENARIOS[key]
         with col:
-            with st.container(border=True): # This creates the visual card boundary
-                st.markdown(f"""
-                <div class="scenario-card">
-                    <div class="card-icon">{data['icon']}</div>
-                    <div class="card-title">{data['title']}</div>
-                    <div class="card-desc">{data['desc']}</div>
-                </div>
-                """, unsafe_allow_html=True)
+            # Native Streamlit Container with Border -> Handles alignment automatically
+            with st.container(border=True):
+                st.markdown(f"<div style='font-size: 3rem; text-align: center;'>{data['icon']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<h4 style='text-align: center; margin:0;'>{data['title']}</h4>", unsafe_allow_html=True)
+                # Fixed height box for description to ensure buttons align
+                st.markdown(f"<div class='scenario-desc-box'>{data['desc']}</div>", unsafe_allow_html=True)
                 
-                # Button inside the container, full width
+                # The button is naturally full width inside the container
                 if st.button(f"Start {key}", key=f"btn_{key}"):
                     st.session_state.scenario = key
                     st.session_state.turn_count = 0
@@ -237,16 +197,10 @@ else:
     with c2:
         st.progress(st.session_state.turn_count / MAX_TURNS, text=f"Interaction Progress: {st.session_state.turn_count}/{MAX_TURNS}")
 
-    # 2. Context Header (The Expansion you requested)
-    # This repeats the card info prominently so the user knows what to do
+    # 2. Context Header
     if not st.session_state.messages:
-        st.markdown(f"""
-        <div class="mission-box">
-            <h4 style="margin:0;">{curr['icon']} {curr['role']}</h4>
-            <p style="margin-top:10px;"><strong>Situation:</strong> {curr['desc']}</p>
-            <p><strong>🎯 YOUR GOAL:</strong> {curr['task']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown(f"**GOAL:** {curr['task']}")
 
     # 3. Chat Zone
     for msg in st.session_state.messages:
@@ -272,16 +226,14 @@ else:
                 st.session_state.turn_count -= 1
                 st.rerun()
 
-    # 5. CONTROL PANEL (The New UX for Recorder)
+    # 5. SIMPLE RECORDER ZONE
     if st.session_state.turn_count < MAX_TURNS:
-        st.markdown("""
-        <div class="control-panel">
-            <div class="panel-label">🎙️ NURSE RESPONSE TERMINAL</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("---")
+        # Your specific requested text
+        st.markdown('<div class="recorder-label">Click on the 🎙️ icon below to converse and get feedback</div>', unsafe_allow_html=True)
         
-        # Audio Input sits cleanly here
-        audio_val = st.audio_input("Record Response", label_visibility="collapsed")
+        # Audio Input
+        audio_val = st.audio_input("Record", label_visibility="collapsed")
         
         if audio_val:
             if st.session_state.last_audio_id != audio_val.file_id:
