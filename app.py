@@ -48,9 +48,8 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect Password")
         st.stop()
 
-# --- 4. MODEL SETUP (NO STARTUP PING) ---
-# We use 2.0-flash-exp because your screenshot shows it is available (Green).
-# We do NOT test the connection here to prevent startup crashes.
+# --- 4. MODEL SETUP (The Fix) ---
+# We force the experimental model which usually has a separate, fresh quota.
 def get_model():
     return genai.GenerativeModel("gemini-2.0-flash-exp")
 
@@ -156,6 +155,7 @@ else:
     audio_val = st.audio_input("Tap to Speak...")
 
     if audio_val:
+        # Fix: Ensure we don't re-process the same audio file
         if st.session_state.last_audio_id != audio_val.file_id:
             st.session_state.last_audio_id = audio_val.file_id
             
@@ -171,4 +171,4 @@ else:
                     if mp3: st.audio(mp3, format="audio/mp3", autoplay=True)
                     st.rerun()
                 else:
-                    st.error("Connection Error. Please try again.")
+                    st.error("Connection Error. Your API Key quota might be exceeded.")
