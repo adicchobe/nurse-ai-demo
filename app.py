@@ -9,28 +9,26 @@ import time
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
 
-# --- 2. CLEAN STYLING (Single Column Focus) ---
+# --- 2. ADAPTIVE STYLING (Works in Dark & Light Mode) ---
 st.markdown("""
 <style>
-    /* Card Style */
+    /* Card Style - Uses transparent background to adapt to Theme */
     .scenario-card {
-        border: 1px solid #e0e0e0;
+        border: 1px solid rgba(128, 128, 128, 0.3);
         border-radius: 12px;
         padding: 1.5rem;
         text-align: center;
         margin-bottom: 1rem;
-        background-color: #fafafa;
-        transition: transform 0.2s;
     }
     .scenario-card:hover {
+        border-color: #FF4B4B; /* Streamlit Red accent on hover */
         transform: translateY(-2px);
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     }
     
-    /* Hide Input Hints */
+    /* Hide extra input text */
     div[data-testid="InputInstructions"] > span { display: none; }
     
-    /* Full Width Styled Buttons */
+    /* Buttons */
     .stButton button { 
         width: 100%; 
         font-weight: 600; 
@@ -38,11 +36,10 @@ st.markdown("""
         height: 3rem;
     }
     
-    /* Feedback Box Styling */
+    /* Make the feedback box pop slightly without breaking themes */
     div[data-testid="stExpander"] {
-        border: 1px solid #e0e0e0;
+        border: 1px solid rgba(128, 128, 128, 0.2);
         border-radius: 10px;
-        background-color: #f8f9fa;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -69,29 +66,30 @@ if "APP_PASSWORD" in st.secrets:
                 st.error("Incorrect Password")
         st.stop()
 
-# --- 4. TOP SETTINGS MENU (Replaces Sidebar) ---
+# --- 4. SETTINGS (Top Menu) ---
 st.title("🩺 CareLingo")
 
-# Collapsible Settings Menu
-with st.expander("⚙️ Model & Settings"):
-    c1, c2 = st.columns([2, 1])
+with st.expander("⚙️ Settings & Models"):
+    c1, c2 = st.columns([3, 1])
     with c1:
+        # FULL LIST from your billing screenshot
         model_choice = st.selectbox(
-            "AI Model",
+            "Select AI Model",
             [
-                "gemini-2.5-flash-native-audio-dialog", # Best (if available)
+                "gemini-2.5-flash-native-audio-dialog", # Unlimited Live
                 "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-3-flash",
                 "gemini-2.0-flash-exp",
-                "gemini-1.5-flash"
-            ],
-            label_visibility="collapsed"
+                "gemini-1.5-flash",
+                "gemini-1.5-pro"
+            ]
         )
     with c2:
         if st.button("🗑️ Reset Chat"):
             st.session_state.messages = []
             st.session_state.feedback = None
             st.rerun()
-    st.caption(f"Currently using: {model_choice}")
 
 # Initialize Model
 model = genai.GenerativeModel(model_choice)
@@ -147,9 +145,9 @@ def text_to_speech(text):
 
 # --- 8. UI FLOW ---
 
-# Scenario Selection View
+# Scenario Selection
 if not st.session_state.scenario:
-    st.markdown("### Choose a Practice Scenario")
+    st.markdown("### Choose a Scenario")
     st.markdown("---")
     
     c1, c2, c3 = st.columns(3)
@@ -169,11 +167,11 @@ if not st.session_state.scenario:
             st.session_state.scenario = "Emergency"
             st.rerun()
 
-# Active Chat View
+# Active Chat
 else:
     curr = SCENARIOS[st.session_state.scenario]
     
-    # Navigation Header
+    # Navigation
     c1, c2 = st.columns([1, 3])
     with c1:
         if st.button("← Back"):
@@ -186,26 +184,23 @@ else:
     
     st.divider()
 
-    # Chat Area
+    # Chat
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
 
-    # Feedback Area (With Contextual Retry)
+    # Feedback + Retry
     if st.session_state.feedback:
         f = st.session_state.feedback
         with st.expander("📊 Teacher's Feedback", expanded=True):
-            # Metrics
             cols = st.columns(3)
             cols[0].metric("Grammar", f"{f.get('grammar',0)}/10")
             cols[1].metric("Politeness", f"{f.get('politeness',0)}/10")
             cols[2].metric("Medical", f"{f.get('medical',0)}/10")
             
-            # Advice
             st.info(f"💡 {f.get('critique', '')}")
             st.success(f"🗣️ Better: \"{f.get('better_phrase', '')}\"")
             
-            # Contextual Retry Button
             st.markdown("---")
             if st.button("↩️ Retry Last Turn"):
                 if len(st.session_state.messages) >= 2:
@@ -214,7 +209,7 @@ else:
                     st.session_state.feedback = None
                     st.rerun()
 
-    # Audio Input (Bottom)
+    # Input
     st.markdown("###")
     audio_val = st.audio_input("Tap to Speak...")
 
@@ -222,6 +217,7 @@ else:
         if st.session_state.last_audio_id != audio_val.file_id:
             st.session_state.last_audio_id = audio_val.file_id
             
+            # Simple Status Spinner (Most reliable)
             with st.status("🔄 Processing...", expanded=True) as status:
                 st.write(f"Connecting to **{model_choice}**...")
                 
@@ -235,9 +231,8 @@ else:
                     
                     mp3 = text_to_speech(ai_data["response_text"])
                     if mp3: st.audio(mp3, format="audio/mp3", autoplay=True)
-                    time.sleep(1)
+                    time.sleep(0.5)
                     st.rerun()
                 else:
                     status.update(label="Failed", state="error")
                     st.error(f"Error: {ai_data}")
-                    st.caption("Tip: Switch models in the top 'Settings' menu.")
