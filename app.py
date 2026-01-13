@@ -9,85 +9,76 @@ import time
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
 
-# --- 2. THEME-AWARE CSS (The Fix) ---
+# --- 2. FINAL POLISH CSS (Theme-Aware & Aligned) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-    /* --- SCENARIO CARDS (Theme Adaptive) --- */
-    .scenario-card {
-        background-color: #ffffff; /* Default Light */
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        height: 280px; /* FIXED HEIGHT for alignment */
+    /* --- ALIGNMENT ENGINE --- */
+    /* This ensures buttons align perfectly with cards in the grid */
+    div[data-testid="column"] {
         display: flex;
         flex-direction: column;
-        justify-content: flex-start;
-        align-items: center;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        margin-bottom: 10px;
-        transition: transform 0.2s;
+        height: 100%;
     }
     
-    .scenario-icon { font-size: 3rem; margin-bottom: 10px; }
-    .scenario-title { font-weight: 700; font-size: 1.1rem; margin-bottom: 10px; color: #111827; }
-    .scenario-desc { font-size: 0.9rem; color: #4b5563; line-height: 1.4; }
-
-    /* --- DARK MODE OVERRIDES --- */
-    @media (prefers-color-scheme: dark) {
-        .scenario-card {
-            background-color: #262730;
-            border-color: #41444e;
-            box-shadow: none;
-        }
-        .scenario-title { color: #f9fafb; }
-        .scenario-desc { color: #d1d5db; }
+    /* --- SCENARIO CARDS --- */
+    .scenario-card {
+        padding: 10px;
+        text-align: center;
+        margin-bottom: 10px;
     }
+    .card-icon { font-size: 3rem; margin-bottom: 10px; }
+    .card-title { font-weight: 700; font-size: 1.1rem; margin-bottom: 8px; }
+    .card-desc { font-size: 0.9rem; opacity: 0.8; line-height: 1.4; min-height: 60px; }
 
-    /* --- BUTTONS (Centered & Full Width) --- */
+    /* --- BUTTONS (Standardized) --- */
     div.stButton > button {
         width: 100%;
         border-radius: 8px;
         font-weight: 600;
         border: 1px solid rgba(128, 128, 128, 0.2);
         padding: 0.5rem 1rem;
-        margin-top: 0px; /* Remove default margin */
+        background-color: transparent; /* Adaptive to theme */
+        transition: all 0.2s;
     }
     div.stButton > button:hover {
         border-color: #FF4B4B;
         color: #FF4B4B;
+        background-color: rgba(255, 75, 75, 0.05);
         transform: translateY(-2px);
     }
 
-    /* --- ACTION ZONE (The Recorder Alert) --- */
-    .action-zone {
-        background-color: rgba(255, 75, 75, 0.05); /* Light red tint */
-        border: 2px dashed #FF4B4B;
-        border-radius: 12px;
-        padding: 20px;
-        text-align: center;
-        margin-top: 25px;
-    }
-    .action-text {
-        font-weight: 700;
-        color: #FF4B4B;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        font-size: 0.9rem;
-        margin-bottom: 10px;
-        display: block;
+    /* --- ACTIVE SCENARIO HEADER --- */
+    .mission-box {
+        background-color: rgba(59, 130, 246, 0.1); /* Light Blue Tint */
+        border-left: 5px solid #3b82f6;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
     }
     
-    /* Animation */
-    .finger-anim { font-size: 2rem; display: block; margin: 0 auto; animation: bounce 1.5s infinite; }
-    @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+    /* --- CONTROL PANEL (Recorder Zone) --- */
+    .control-panel {
+        margin-top: 30px;
+        padding: 20px;
+        border-top: 1px solid rgba(128,128,128, 0.2);
+        background-color: rgba(128,128,128, 0.05); /* Subtle gray background */
+        border-radius: 12px;
+        text-align: center;
+    }
+    .panel-label {
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 0.8rem;
+        letter-spacing: 1px;
+        margin-bottom: 10px;
+        opacity: 0.7;
+    }
 
     /* UTILS */
     div[data-testid="InputInstructions"] > span { display: none; }
-    
 </style>
 """, unsafe_allow_html=True)
 
@@ -135,27 +126,27 @@ with st.expander("⚙️ Settings", expanded=False):
 
 model = genai.GenerativeModel(model_choice)
 
-# --- 5. SCENARIO DATA ---
+# --- 5. SCENARIO DATA (Rich Context) ---
 SCENARIOS = {
     "Admission": {
         "title": "Initial Admission",
-        "role": "Herr Müller",
-        "desc": "Herr Müller (72) is clutching his chest bag tightly. He refuses to sit on the bed and looks terrified of the equipment.",
-        "task": "Calm him down and convince him to sit.",
+        "role": "Herr Müller (72)",
+        "desc": "Herr Müller is clutching his chest bag tightly. He looks terrified of the hospital equipment and refuses to sit down.",
+        "task": "Calm him down, build rapport, and convince him to sit on the bed so you can check him.",
         "avatar": "👴", "icon": "📋"
     },
     "Medication": {
         "title": "Medication Dispute",
-        "role": "Frau Schneider",
-        "desc": "Frau Schneider has pushed her pill cup away. She insists: 'The blue pill gives me terrible headaches!'",
-        "task": "Address side-effects empathetically.",
+        "role": "Frau Schneider (65)",
+        "desc": "Frau Schneider has pushed her pill cup away aggressively. She insists: 'The blue pill gives me terrible headaches! I won't take it.'",
+        "task": "Acknowledge her side-effects, show empathy, but explain why the heart medication is non-negotiable today.",
         "avatar": "👵", "icon": "💊"
     },
     "Emergency": {
         "title": "Code Blue Triage",
         "role": "Panicked Relative",
-        "desc": "A visitor screams: 'My husband collapsed in the hallway!' They are hyperventilating.",
-        "task": "Get location and symptoms immediately.",
+        "desc": "A visitor runs to the nurses' station screaming/hyperventilating: 'My husband collapsed in the hallway! Help!'",
+        "task": "Take control immediately. Get the exact location and patient status (breathing/conscious) in under 3 questions.",
         "avatar": "🏃", "icon": "🚨"
     }
 }
@@ -205,11 +196,12 @@ def text_to_speech(text):
 
 # --- 8. UI FLOW ---
 
-# === SCREEN 1: SELECTION (Fixed Alignment) ===
+# === SCREEN 1: SELECTION (Grid Layout) ===
 if not st.session_state.scenario:
-    st.subheader("Select a Scenario")
+    st.markdown("### 👋 Select a Practice Scenario")
     st.info("Each scenario is a 5-turn micro-simulation.")
     
+    # We use containers to ensure cards align perfectly
     cols = st.columns(3)
     keys = list(SCENARIOS.keys())
     
@@ -217,46 +209,53 @@ if not st.session_state.scenario:
         key = keys[i]
         data = SCENARIOS[key]
         with col:
-            # 1. The Visual Card
-            st.markdown(f"""
-            <div class="scenario-card">
-                <div class="scenario-icon">{data['icon']}</div>
-                <div class="scenario-title">{data['title']}</div>
-                <div class="scenario-desc">{data['desc']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-            
-            # 2. The Button (Centered & Full Width under card)
-            if st.button(f"Select {key}", key=f"btn_{key}"):
-                st.session_state.scenario = key
-                st.session_state.turn_count = 0
-                st.rerun()
+            with st.container(border=True): # This creates the visual card boundary
+                st.markdown(f"""
+                <div class="scenario-card">
+                    <div class="card-icon">{data['icon']}</div>
+                    <div class="card-title">{data['title']}</div>
+                    <div class="card-desc">{data['desc']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # Button inside the container, full width
+                if st.button(f"Start {key}", key=f"btn_{key}"):
+                    st.session_state.scenario = key
+                    st.session_state.turn_count = 0
+                    st.rerun()
 
 # === SCREEN 2: ACTIVE SIMULATION ===
 else:
     curr = SCENARIOS[st.session_state.scenario]
     
-    # Header
+    # 1. Header Navigation
     c1, c2 = st.columns([1, 5])
     with c1:
         if st.button("← Back"):
             st.session_state.clear()
             st.rerun()
     with c2:
-        st.progress(st.session_state.turn_count / MAX_TURNS, text=f"Turn {st.session_state.turn_count}/{MAX_TURNS}")
+        st.progress(st.session_state.turn_count / MAX_TURNS, text=f"Interaction Progress: {st.session_state.turn_count}/{MAX_TURNS}")
 
-    # Context
+    # 2. Context Header (The Expansion you requested)
+    # This repeats the card info prominently so the user knows what to do
     if not st.session_state.messages:
-        st.info(f"**GOAL:** {curr['task']}")
+        st.markdown(f"""
+        <div class="mission-box">
+            <h4 style="margin:0;">{curr['icon']} {curr['role']}</h4>
+            <p style="margin-top:10px;"><strong>Situation:</strong> {curr['desc']}</p>
+            <p><strong>🎯 YOUR GOAL:</strong> {curr['task']}</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    # Chat
+    # 3. Chat Zone
     for msg in st.session_state.messages:
         role = "assistant" if msg["role"] == "assistant" else "user"
         avatar = curr['avatar'] if role == "assistant" else "🧑‍⚕️"
         with st.chat_message(role, avatar=avatar):
             st.write(msg["content"])
 
-    # Feedback
+    # 4. Feedback Zone
     if st.session_state.feedback:
         f = st.session_state.feedback
         with st.expander("📝 Instructor Feedback", expanded=True):
@@ -273,24 +272,22 @@ else:
                 st.session_state.turn_count -= 1
                 st.rerun()
 
-    # --- ACTION ZONE (Fixed Dark Mode Visibility) ---
+    # 5. CONTROL PANEL (The New UX for Recorder)
     if st.session_state.turn_count < MAX_TURNS:
-        st.markdown(f"""
-        <div class="action-zone">
-            <span class="action-text">⚠️ Mandatory Action</span>
-            <div class="finger-anim">👇</div>
-            <div style="font-weight:600; margin-bottom:10px; color: #FF4B4B;">Tap below to respond to {curr['role']}</div>
+        st.markdown("""
+        <div class="control-panel">
+            <div class="panel-label">🎙️ NURSE RESPONSE TERMINAL</div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Audio Input
-        audio_val = st.audio_input("Record", label_visibility="collapsed")
+        # Audio Input sits cleanly here
+        audio_val = st.audio_input("Record Response", label_visibility="collapsed")
         
         if audio_val:
             if st.session_state.last_audio_id != audio_val.file_id:
                 st.session_state.last_audio_id = audio_val.file_id
                 
-                with st.spinner("Processing..."):
+                with st.spinner("🧠 Analyzing speech..."):
                     user_text, ai_data = process_audio(audio_val.read(), st.session_state.scenario, st.session_state.messages)
                     
                     if user_text and ai_data:
