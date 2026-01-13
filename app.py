@@ -9,83 +9,85 @@ import time
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
 
-# --- 2. HIGH-IMPACT CSS ---
+# --- 2. THEME-AWARE CSS (The Fix) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-    
-    /* 1. Centered Scenario Cards */
+
+    /* --- SCENARIO CARDS (Theme Adaptive) --- */
     .scenario-card {
-        background: white;
-        border-radius: 12px;
-        padding: 20px;
+        background-color: #ffffff; /* Default Light */
         border: 1px solid #e5e7eb;
-        text-align: center; /* Center align everything */
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        margin-bottom: 15px;
-    }
-    .scenario-icon { font-size: 3rem; margin-bottom: 10px; }
-    .scenario-title { font-weight: 700; font-size: 1.1rem; color: #111; margin-bottom: 5px; }
-    .scenario-desc { font-size: 0.9rem; color: #666; margin-bottom: 20px; line-height: 1.4; }
-    
-    /* 2. Buttons */
-    .stButton button {
-        width: 100%;
-        border-radius: 25px; /* Pill shape for CTA */
-        border: none;
-        background-color: #f3f4f6;
-        color: #374151;
-        font-weight: 600;
-        transition: all 0.2s;
-        margin-top: 10px;
-    }
-    .stButton button:hover {
-        background-color: #3b82f6; /* Blue hover */
-        color: white;
-        transform: scale(1.02);
-        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-    }
-    
-    /* 3. THE RECORDER "ALERT" STATE */
-    .action-zone {
-        background-color: #fff7ed; /* Light Orange/Yellow background */
-        border: 2px solid #fdba74; /* Orange Border */
         border-radius: 12px;
         padding: 20px;
         text-align: center;
-        margin-top: 20px;
-        animation: slideIn 0.5s ease-out;
-    }
-    .action-header {
-        color: #c2410c; /* Dark Orange Text */
-        font-weight: 700;
-        text-transform: uppercase;
-        font-size: 0.85rem;
-        letter-spacing: 1px;
+        height: 280px; /* FIXED HEIGHT for alignment */
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: center;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         margin-bottom: 10px;
+        transition: transform 0.2s;
     }
     
-    /* 4. The Finger Animation */
-    .finger-point {
-        font-size: 2rem;
-        display: block;
-        margin: 0 auto;
-        animation: bounce 1.5s infinite;
-    }
-    
-    @keyframes bounce {
-        0%, 100% { transform: translateY(0); }
-        50% { transform: translateY(-10px); }
-    }
-    @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    .scenario-icon { font-size: 3rem; margin-bottom: 10px; }
+    .scenario-title { font-weight: 700; font-size: 1.1rem; margin-bottom: 10px; color: #111827; }
+    .scenario-desc { font-size: 0.9rem; color: #4b5563; line-height: 1.4; }
 
-    /* Hide standard input hints */
+    /* --- DARK MODE OVERRIDES --- */
+    @media (prefers-color-scheme: dark) {
+        .scenario-card {
+            background-color: #262730;
+            border-color: #41444e;
+            box-shadow: none;
+        }
+        .scenario-title { color: #f9fafb; }
+        .scenario-desc { color: #d1d5db; }
+    }
+
+    /* --- BUTTONS (Centered & Full Width) --- */
+    div.stButton > button {
+        width: 100%;
+        border-radius: 8px;
+        font-weight: 600;
+        border: 1px solid rgba(128, 128, 128, 0.2);
+        padding: 0.5rem 1rem;
+        margin-top: 0px; /* Remove default margin */
+    }
+    div.stButton > button:hover {
+        border-color: #FF4B4B;
+        color: #FF4B4B;
+        transform: translateY(-2px);
+    }
+
+    /* --- ACTION ZONE (The Recorder Alert) --- */
+    .action-zone {
+        background-color: rgba(255, 75, 75, 0.05); /* Light red tint */
+        border: 2px dashed #FF4B4B;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+        margin-top: 25px;
+    }
+    .action-text {
+        font-weight: 700;
+        color: #FF4B4B;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        font-size: 0.9rem;
+        margin-bottom: 10px;
+        display: block;
+    }
+    
+    /* Animation */
+    .finger-anim { font-size: 2rem; display: block; margin: 0 auto; animation: bounce 1.5s infinite; }
+    @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+
+    /* UTILS */
     div[data-testid="InputInstructions"] > span { display: none; }
+    
 </style>
 """, unsafe_allow_html=True)
 
@@ -104,7 +106,7 @@ if "APP_PASSWORD" in st.secrets:
         st.markdown("<br><br><h1 style='text-align: center;'>🔐 CareLingo</h1>", unsafe_allow_html=True)
         with st.form("login"):
             pwd = st.text_input("Enter Access Code", type="password")
-            if st.form_submit_button("Start Practice Session 🚀"):
+            if st.form_submit_button("Start Practice! 🚀"):
                 if pwd == st.secrets["APP_PASSWORD"]:
                     st.session_state.authenticated = True
                     st.rerun()
@@ -112,16 +114,16 @@ if "APP_PASSWORD" in st.secrets:
                     st.error("⚠️ Invalid Code")
         st.stop()
 
-# --- 4. MODEL SETTINGS ---
+# --- 4. SETTINGS ---
 st.title("🩺 CareLingo")
 
-# Collapsed settings
 with st.expander("⚙️ Settings", expanded=False):
     c1, c2 = st.columns([3, 1])
     with c1:
-        # Prioritizing the "Green" models from your screenshot
+        # Green Bar models from your screenshot
         model_choice = st.selectbox("AI Model:", [
             "gemini-2.5-flash-lite", 
+            "gemini-3-flash", 
             "gemini-2.0-flash-exp", 
             "gemini-1.5-flash"
         ])
@@ -133,34 +135,28 @@ with st.expander("⚙️ Settings", expanded=False):
 
 model = genai.GenerativeModel(model_choice)
 
-# --- 5. SCENARIO DATA (Specific & Narrative) ---
+# --- 5. SCENARIO DATA ---
 SCENARIOS = {
     "Admission": {
         "title": "Initial Admission",
-        "difficulty": "Beginner",
         "role": "Herr Müller",
-        "desc": "Herr Müller is clutching his chest bag tightly and refuses to sit on the bed. He looks terrified.",
+        "desc": "Herr Müller (72) is clutching his chest bag tightly. He refuses to sit on the bed and looks terrified of the equipment.",
         "task": "Calm him down and convince him to sit.",
-        "avatar": "👴",
-        "icon": "📋"
+        "avatar": "👴", "icon": "📋"
     },
     "Medication": {
         "title": "Medication Dispute",
-        "difficulty": "Intermediate",
         "role": "Frau Schneider",
-        "desc": "Frau Schneider has thrown her pills on the floor. She says: 'These blue ones kill my stomach!'",
-        "task": "Address her side-effect concerns empathetically.",
-        "avatar": "👵",
-        "icon": "💊"
+        "desc": "Frau Schneider has pushed her pill cup away. She insists: 'The blue pill gives me terrible headaches!'",
+        "task": "Address side-effects empathetically.",
+        "avatar": "👵", "icon": "💊"
     },
     "Emergency": {
         "title": "Code Blue Triage",
-        "difficulty": "Advanced",
         "role": "Panicked Relative",
-        "desc": "A visitor screams: 'He collapsed in the hallway!' They are hyperventilating.",
-        "task": "Get the location and symptoms immediately.",
-        "avatar": "🏃",
-        "icon": "🚨"
+        "desc": "A visitor screams: 'My husband collapsed in the hallway!' They are hyperventilating.",
+        "task": "Get location and symptoms immediately.",
+        "avatar": "🏃", "icon": "🚨"
     }
 }
 
@@ -209,11 +205,11 @@ def text_to_speech(text):
 
 # --- 8. UI FLOW ---
 
-# === SCREEN 1: CENTERED CARDS ===
+# === SCREEN 1: SELECTION (Fixed Alignment) ===
 if not st.session_state.scenario:
     st.subheader("Select a Scenario")
+    st.info("Each scenario is a 5-turn micro-simulation.")
     
-    # Grid Layout
     cols = st.columns(3)
     keys = list(SCENARIOS.keys())
     
@@ -221,19 +217,16 @@ if not st.session_state.scenario:
         key = keys[i]
         data = SCENARIOS[key]
         with col:
-            # The Card Visual
+            # 1. The Visual Card
             st.markdown(f"""
             <div class="scenario-card">
-                <div>
-                    <div class="scenario-icon">{data['icon']}</div>
-                    <div class="scenario-title">{data['title']}</div>
-                    <hr style="margin: 10px 0; border: 0; border-top: 1px solid #eee;">
-                    <div class="scenario-desc">{data['desc']}</div>
-                </div>
+                <div class="scenario-icon">{data['icon']}</div>
+                <div class="scenario-title">{data['title']}</div>
+                <div class="scenario-desc">{data['desc']}</div>
             </div>
             """, unsafe_allow_html=True)
             
-            # The Button (Centered below the visual via CSS)
+            # 2. The Button (Centered & Full Width under card)
             if st.button(f"Select {key}", key=f"btn_{key}"):
                 st.session_state.scenario = key
                 st.session_state.turn_count = 0
@@ -252,9 +245,9 @@ else:
     with c2:
         st.progress(st.session_state.turn_count / MAX_TURNS, text=f"Turn {st.session_state.turn_count}/{MAX_TURNS}")
 
-    # Context Header
+    # Context
     if not st.session_state.messages:
-        st.info(f"**SITUATION:** {curr['desc']} | **GOAL:** {curr['task']}")
+        st.info(f"**GOAL:** {curr['task']}")
 
     # Chat
     for msg in st.session_state.messages:
@@ -263,7 +256,7 @@ else:
         with st.chat_message(role, avatar=avatar):
             st.write(msg["content"])
 
-    # Feedback Zone
+    # Feedback
     if st.session_state.feedback:
         f = st.session_state.feedback
         with st.expander("📝 Instructor Feedback", expanded=True):
@@ -280,13 +273,13 @@ else:
                 st.session_state.turn_count -= 1
                 st.rerun()
 
-    # --- THE ALERT RECORDER ZONE ---
+    # --- ACTION ZONE (Fixed Dark Mode Visibility) ---
     if st.session_state.turn_count < MAX_TURNS:
         st.markdown(f"""
         <div class="action-zone">
-            <div class="action-header">⚠️ Action Required</div>
-            <div class="finger-point">👇</div>
-            <div style="font-weight:600; margin-bottom:10px;">Tap below to respond to {curr['role']}</div>
+            <span class="action-text">⚠️ Mandatory Action</span>
+            <div class="finger-anim">👇</div>
+            <div style="font-weight:600; margin-bottom:10px; color: #FF4B4B;">Tap below to respond to {curr['role']}</div>
         </div>
         """, unsafe_allow_html=True)
         
