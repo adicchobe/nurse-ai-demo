@@ -9,37 +9,63 @@ import time
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
 
-# --- 2. ADAPTIVE STYLING (Works in Dark & Light Mode) ---
+# --- 2. PROFESSIONAL UX DESIGN (Hover Effects & Clickable Areas) ---
 st.markdown("""
 <style>
-    /* Card Style - Uses transparent background to adapt to Theme */
-    .scenario-card {
-        border: 1px solid rgba(128, 128, 128, 0.3);
+    /* Global Font */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    
+    /* Hover Effects for Buttons */
+    .stButton button {
+        width: 100%;
         border-radius: 12px;
-        padding: 1.5rem;
-        text-align: center;
-        margin-bottom: 1rem;
-    }
-    .scenario-card:hover {
-        border-color: #FF4B4B; /* Streamlit Red accent on hover */
-        transform: translateY(-2px);
+        border: 1px solid rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+        background-color: white; /* Light mode default */
+        color: #333;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     
-    /* Hide extra input text */
+    /* Make buttons pop on hover */
+    .stButton button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        border-color: #FF4B4B;
+        color: #FF4B4B;
+    }
+    
+    /* Dark Mode Adjustment for Buttons */
+    @media (prefers-color-scheme: dark) {
+        .stButton button {
+            background-color: #262730;
+            color: white;
+            border: 1px solid #4a4a4a;
+        }
+    }
+
+    /* Scenario Description Text */
+    .scenario-desc {
+        font-size: 0.9rem;
+        color: #666;
+        margin-bottom: 10px;
+        min-height: 3rem;
+    }
+
+    /* Hide confusing Input hints */
     div[data-testid="InputInstructions"] > span { display: none; }
     
-    /* Buttons */
-    .stButton button { 
-        width: 100%; 
-        font-weight: 600; 
-        border-radius: 10px;
-        height: 3rem;
+    /* Highlight the Recorder */
+    .recorder-cue {
+        font-weight: bold;
+        color: #FF4B4B;
+        text-align: center;
+        animation: pulse 2s infinite;
     }
-    
-    /* Make the feedback box pop slightly without breaking themes */
-    div[data-testid="stExpander"] {
-        border: 1px solid rgba(128, 128, 128, 0.2);
-        border-radius: 10px;
+    @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.6; }
+        100% { opacity: 1; }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -56,58 +82,76 @@ if "APP_PASSWORD" in st.secrets:
         st.session_state.authenticated = False
     
     if not st.session_state.authenticated:
-        st.markdown("<h2 style='text-align: center;'>🔒 Login</h2>", unsafe_allow_html=True)
-        pwd = st.text_input("Password", type="password")
-        if st.button("Enter CareLingo"):
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align: center;'>🔐 CareLingo Login</h1>", unsafe_allow_html=True)
+        pwd = st.text_input("Access Password", type="password")
+        if st.button("Start Shift"):
             if pwd == st.secrets["APP_PASSWORD"]:
                 st.session_state.authenticated = True
                 st.rerun()
             else:
-                st.error("Incorrect Password")
+                st.error("⚠️ Access Denied")
         st.stop()
 
-# --- 4. SETTINGS (Top Menu) ---
+# --- 4. MODEL SETTINGS (Open by Default) ---
 st.title("🩺 CareLingo")
 
-with st.expander("⚙️ Settings & Models"):
+# We use an expander that is OPEN by default so users see the model choice
+with st.expander("⚙️ System Settings (Model Selection)", expanded=True):
     c1, c2 = st.columns([3, 1])
     with c1:
-        # FULL LIST from your billing screenshot
         model_choice = st.selectbox(
-            "Select AI Model",
+            "Active AI Brain:",
             [
-                "gemini-2.5-flash-native-audio-dialog", # Unlimited Live
+                "gemini-2.5-flash-native-audio-dialog", # ⚡ Unlimited Live
                 "gemini-2.5-flash",
-                "gemini-2.5-flash-lite",
-                "gemini-3-flash",
                 "gemini-2.0-flash-exp",
                 "gemini-1.5-flash",
                 "gemini-1.5-pro"
-            ]
+            ],
+            index=0
         )
     with c2:
-        if st.button("🗑️ Reset Chat"):
+        st.write("") # Spacer
+        if st.button("🗑️ Reset All"):
             st.session_state.messages = []
             st.session_state.feedback = None
             st.rerun()
 
-# Initialize Model
 model = genai.GenerativeModel(model_choice)
 
-# --- 5. SESSION STATE ---
+# --- 5. STATE MANAGEMENT ---
 if "messages" not in st.session_state: st.session_state.messages = []
 if "scenario" not in st.session_state: st.session_state.scenario = None
 if "feedback" not in st.session_state: st.session_state.feedback = None
 if "last_audio_id" not in st.session_state: st.session_state.last_audio_id = None
 
-# --- 6. SCENARIOS ---
+# --- 6. SCENARIO DATA (Empathetic & Clear) ---
 SCENARIOS = {
-    "Admission": {"icon": "📋", "title": "Admission", "role": "Herr Müller", "goal": "Collect medical history."},
-    "Medication": {"icon": "💊", "title": "Medication", "role": "Frau Schneider", "goal": "Explain why meds are needed."},
-    "Emergency": {"icon": "🚨", "title": "Emergency", "role": "Visitor", "goal": "Get vitals fast."}
+    "Admission": {
+        "icon": "📋", 
+        "title": "Patient Admission (Anamnese)", 
+        "desc": "A new patient has just arrived. They are anxious. Your goal is to collect their medical history and calm them down.",
+        "role": "Herr Müller (Anxious Patient)", 
+        "goal": "Collect medical history & build trust."
+    },
+    "Medication": {
+        "icon": "💊", 
+        "title": "Medication Refusal", 
+        "desc": "Frau Schneider refuses to take her heart medication. She says it makes her dizzy. Convince her safely.",
+        "role": "Frau Schneider (Stubborn)", 
+        "goal": "Explain necessity & negotiate."
+    },
+    "Emergency": {
+        "icon": "🚨", 
+        "title": "Emergency (Notfall)", 
+        "desc": "A visitor runs to you: 'My husband collapsed!' You need to get vital details immediately to send the code team.",
+        "role": "Visitor (Panicked)", 
+        "goal": "Get vitals (Age, Symptoms) FAST."
+    }
 }
 
-# --- 7. LOGIC ---
+# --- 7. CORE LOGIC ---
 def process_audio(audio_bytes, scenario_key):
     try:
         # 1. Transcribe
@@ -145,54 +189,68 @@ def text_to_speech(text):
 
 # --- 8. UI FLOW ---
 
-# Scenario Selection
+# === SCREEN 1: SCENARIO SELECTION ===
 if not st.session_state.scenario:
-    st.markdown("### Choose a Scenario")
-    st.markdown("---")
+    st.markdown("### 👋 Welcome, Nurse.")
+    st.info("Choose a scenario below to begin your language practice shift.")
     
+    # 3 Columns for Cards
     c1, c2, c3 = st.columns(3)
+    
     with c1:
-        st.markdown(f"<div class='scenario-card'><h1>{SCENARIOS['Admission']['icon']}</h1></div>", unsafe_allow_html=True)
-        if st.button("Admission"):
+        # We put the button first, acting as the entire card click
+        if st.button(f"{SCENARIOS['Admission']['icon']} Start Admission"):
             st.session_state.scenario = "Admission"
             st.rerun()
+        st.markdown(f"<div class='scenario-desc'>{SCENARIOS['Admission']['desc']}</div>", unsafe_allow_html=True)
+        
     with c2:
-        st.markdown(f"<div class='scenario-card'><h1>{SCENARIOS['Medication']['icon']}</h1></div>", unsafe_allow_html=True)
-        if st.button("Medication"):
+        if st.button(f"{SCENARIOS['Medication']['icon']} Start Medication"):
             st.session_state.scenario = "Medication"
             st.rerun()
+        st.markdown(f"<div class='scenario-desc'>{SCENARIOS['Medication']['desc']}</div>", unsafe_allow_html=True)
+        
     with c3:
-        st.markdown(f"<div class='scenario-card'><h1>{SCENARIOS['Emergency']['icon']}</h1></div>", unsafe_allow_html=True)
-        if st.button("Emergency"):
+        if st.button(f"{SCENARIOS['Emergency']['icon']} Start Emergency"):
             st.session_state.scenario = "Emergency"
             st.rerun()
+        st.markdown(f"<div class='scenario-desc'>{SCENARIOS['Emergency']['desc']}</div>", unsafe_allow_html=True)
 
-# Active Chat
+# === SCREEN 2: PRACTICE ROOM ===
 else:
     curr = SCENARIOS[st.session_state.scenario]
     
     # Navigation
-    c1, c2 = st.columns([1, 3])
+    c1, c2 = st.columns([1, 4])
     with c1:
-        if st.button("← Back"):
+        if st.button("← Leave Room"):
             st.session_state.scenario = None
             st.session_state.messages = []
             st.session_state.feedback = None
             st.rerun()
     with c2:
-        st.markdown(f"**{curr['title']}** | {curr['goal']}")
+        st.markdown(f"**Current Task:** {curr['title']}")
     
     st.divider()
 
-    # Chat
+    # Chat History
+    if not st.session_state.messages:
+        st.markdown(f"""
+        <div style='text-align: center; color: #666; padding: 20px; background: #f9f9f9; border-radius: 10px;'>
+            <h3>{curr['icon']} You are now in the room.</h3>
+            <p><strong>Goal:</strong> {curr['goal']}</p>
+            <p>Tap the microphone below and introduce yourself in German.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
             st.write(msg["content"])
 
-    # Feedback + Retry
+    # Feedback Section
     if st.session_state.feedback:
         f = st.session_state.feedback
-        with st.expander("📊 Teacher's Feedback", expanded=True):
+        with st.expander("📊 Instructor Feedback", expanded=True):
             cols = st.columns(3)
             cols[0].metric("Grammar", f"{f.get('grammar',0)}/10")
             cols[1].metric("Politeness", f"{f.get('politeness',0)}/10")
@@ -202,29 +260,29 @@ else:
             st.success(f"🗣️ Better: \"{f.get('better_phrase', '')}\"")
             
             st.markdown("---")
-            if st.button("↩️ Retry Last Turn"):
+            if st.button("↩️ Retry Last Turn (Practice Again)"):
                 if len(st.session_state.messages) >= 2:
                     st.session_state.messages.pop()
                     st.session_state.messages.pop()
                     st.session_state.feedback = None
                     st.rerun()
 
-    # Input
+    # Audio Input (The Hero Action)
     st.markdown("###")
-    audio_val = st.audio_input("Tap to Speak...")
+    st.markdown("<p class='recorder-cue'>👇 Tap to Speak</p>", unsafe_allow_html=True)
+    audio_val = st.audio_input("Record your response", label_visibility="collapsed")
 
     if audio_val:
         if st.session_state.last_audio_id != audio_val.file_id:
             st.session_state.last_audio_id = audio_val.file_id
             
-            # Simple Status Spinner (Most reliable)
-            with st.status("🔄 Processing...", expanded=True) as status:
+            with st.status("🔄 Listening & Analyzing...", expanded=True) as status:
                 st.write(f"Connecting to **{model_choice}**...")
                 
                 user_text, ai_data = process_audio(audio_val.read(), st.session_state.scenario)
                 
                 if user_text and isinstance(ai_data, dict):
-                    status.update(label="Complete!", state="complete", expanded=False)
+                    status.update(label="Response Received!", state="complete", expanded=False)
                     st.session_state.messages.append({"role": "user", "content": user_text})
                     st.session_state.feedback = ai_data["feedback"]
                     st.session_state.messages.append({"role": "assistant", "content": ai_data["response_text"]})
@@ -234,5 +292,5 @@ else:
                     time.sleep(0.5)
                     st.rerun()
                 else:
-                    status.update(label="Failed", state="error")
+                    status.update(label="Connection Failed", state="error")
                     st.error(f"Error: {ai_data}")
