@@ -10,13 +10,13 @@ import re
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
 
-# --- 2. MINIMAL CSS ---
+# --- 2. FINAL POLISH CSS (Theme-Aware & Aligned) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-    /* Buttons */
+    /* Make buttons full width and interactive */
     div.stButton > button {
         width: 100%;
         border-radius: 8px;
@@ -24,7 +24,7 @@ st.markdown("""
         transition: all 0.2s;
     }
     
-    /* Description Box Alignment */
+    /* Helper to ensure descriptions take up same space */
     .scenario-desc-box {
         min-height: 80px; 
         font-size: 0.9rem;
@@ -32,10 +32,10 @@ st.markdown("""
         line-height: 1.5;
     }
 
-    /* Hide Inputs */
+    /* Hide default input instructions */
     div[data-testid="InputInstructions"] > span { display: none; }
     
-    /* Recorder Label */
+    /* The Recorder Instruction Text */
     .recorder-label {
         font-weight: 600;
         color: #FF4B4B; 
@@ -123,23 +123,20 @@ if "last_audio_id" not in st.session_state: st.session_state.last_audio_id = Non
 if "turn_count" not in st.session_state: st.session_state.turn_count = 0
 MAX_TURNS = 5
 
-# --- UPDATED LOGIC TO PREVENT AUDIO CUTOFF ---
-
+# --- 7. LOGIC (WITH AUDIO FIX) ---
 def clean_text_for_speech(text):
-    # 1. Remove all markdown (asterisks, bold, etc)
+    # Fix 1: Remove markdown stars/bold
     text = text.replace("*", "").replace("#", "").replace("_", "")
-    # 2. Remove role labels like "Patient:" or "Herr Müller:"
+    # Fix 2: Remove role labels like "Patient:"
     text = re.sub(r'^.*?:', '', text)
-    # 3. Remove text in brackets (often acting instructions like [coughs])
+    # Fix 3: Remove brackets [coughs] which choke the audio player
     text = re.sub(r'\[.*?\]', '', text)
     text = re.sub(r'\(.*?\)', '', text)
-    # 4. Remove emojis
-    text = text.encode('ascii', 'ignore').decode('ascii')
     return text.strip()
 
 def process_audio(audio_bytes, scenario_key, history):
     try:
-        # ... (Transcription part stays the same) ...
+        # 1. Transcribe
         prompt = "Transcribe this German audio exactly. Output ONLY the German text."
         resp = model.generate_content([prompt, {"mime_type": "audio/mp3", "data": audio_bytes}])
         text = resp.text.strip()
@@ -147,7 +144,7 @@ def process_audio(audio_bytes, scenario_key, history):
         history_txt = "\n".join([f"{m['role']}: {m['content']}" for m in history])
         scen = SCENARIOS[scenario_key]
         
-        # UPDATED PROMPT: Added constraint for SHORT replies
+        # 2. Analyze (Strict Constraint Added)
         analysis_prompt = f"""
         You are a German Medical Roleplay Simulation.
         
@@ -161,13 +158,12 @@ def process_audio(audio_bytes, scenario_key, history):
         CURRENT USER AUDIO: "{text}"
         
         INSTRUCTIONS:
-        1. Reply naturally as the Patient. **KEEP REPLY UNDER 2 SENTENCES.** (This prevents audio cutoff).
-        2. Grade ONLY THE USER (The Nurse).
-        3. Scores must be INTEGERS (1-10).
+        1. Reply naturally as the Patient. **CRITICAL: KEEP REPLY UNDER 20 WORDS.** (Short responses prevent audio errors).
+        2. Grade ONLY THE USER (The Nurse). Scores must be INTEGERS (1-10).
         
         OUTPUT JSON:
         {{
-            "response_text": "German reply (Max 2 sentences)",
+            "response_text": "German reply (Max 20 words)",
             "feedback": {{
                 "grammar": (Integer 1-10), 
                 "politeness": (Integer 1-10), 
@@ -182,9 +178,21 @@ def process_audio(audio_bytes, scenario_key, history):
     except Exception as e:
         return None, None
 
+def text_to_speech(text):
+    try:
+        # Fix 4: Clean text before generating audio
+        clean_text = clean_text_for_speech(text)
+        tts = gTTS(text=clean_text, lang='de', slow=False)
+        buf = io.BytesIO()
+        tts.write_to_fp(buf)
+        buf.seek(0)
+        return buf
+    except:
+        return None
+
 # --- 8. UI FLOW ---
 
-# === SCREEN 1: SELECTION ===
+# === SCREEN 1: SELECTION (Native Containers = Perfect Alignment) ===
 if not st.session_state.scenario:
     st.subheader("Select a Practice Scenario")
     st.info("Each scenario is a 5-turn micro-simulation.")
@@ -196,11 +204,14 @@ if not st.session_state.scenario:
         key = keys[i]
         data = SCENARIOS[key]
         with col:
+            # Native Streamlit Container with Border -> Handles alignment automatically
             with st.container(border=True):
                 st.markdown(f"<div style='font-size: 3rem; text-align: center;'>{data['icon']}</div>", unsafe_allow_html=True)
                 st.markdown(f"<h4 style='text-align: center; margin:0;'>{data['title']}</h4>", unsafe_allow_html=True)
+                # Fixed height box for description to ensure buttons align
                 st.markdown(f"<div class='scenario-desc-box'>{data['desc']}</div>", unsafe_allow_html=True)
                 
+                # The button is naturally full width inside the container
                 if st.button(f"Start {key}", key=f"btn_{key}"):
                     st.session_state.scenario = key
                     st.session_state.turn_count = 0
@@ -210,7 +221,7 @@ if not st.session_state.scenario:
 else:
     curr = SCENARIOS[st.session_state.scenario]
     
-    # 1. Header
+    # 1. Header Navigation
     c1, c2 = st.columns([1, 5])
     with c1:
         if st.button("← Back"):
@@ -219,27 +230,26 @@ else:
     with c2:
         st.progress(st.session_state.turn_count / MAX_TURNS, text=f"Interaction Progress: {st.session_state.turn_count}/{MAX_TURNS}")
 
-    # 2. Context
+    # 2. Context Header
     if not st.session_state.messages:
         with st.container(border=True):
             st.markdown(f"**GOAL:** {curr['task']}")
 
-    # 3. Chat
+    # 3. Chat Zone
     for msg in st.session_state.messages:
         role = "assistant" if msg["role"] == "assistant" else "user"
         avatar = curr['avatar'] if role == "assistant" else "🧑‍⚕️"
         with st.chat_message(role, avatar=avatar):
             st.write(msg["content"])
 
-    # 4. Feedback (Now displaying Integers)
+    # 4. Feedback Zone
     if st.session_state.feedback:
         f = st.session_state.feedback
         with st.expander("📝 Instructor Feedback", expanded=True):
             cols = st.columns(3)
-            # Ensure we display numbers, default to 0 if missing
-            cols[0].metric("Grammar", f"{f.get('grammar', 0)}/10")
-            cols[1].metric("Politeness", f"{f.get('politeness', 0)}/10")
-            cols[2].metric("Medical", f"{f.get('medical', 0)}/10")
+            cols[0].metric("Grammar", f"{f.get('grammar')}/10")
+            cols[1].metric("Politeness", f"{f.get('politeness')}/10")
+            cols[2].metric("Medical", f"{f.get('medical')}/10")
             st.warning(f"💡 {f.get('critique')}")
             st.success(f"🗣️ Better: \"{f.get('better_phrase')}\"")
             if st.button("↺ Retry Turn"):
@@ -249,11 +259,13 @@ else:
                 st.session_state.turn_count -= 1
                 st.rerun()
 
-    # 5. RECORDER
+    # 5. SIMPLE RECORDER ZONE
     if st.session_state.turn_count < MAX_TURNS:
         st.markdown("---")
+        # Your specific requested text
         st.markdown('<div class="recorder-label">Click on the 🎙️ icon below to converse and get feedback</div>', unsafe_allow_html=True)
         
+        # Audio Input
         audio_val = st.audio_input("Record", label_visibility="collapsed")
         
         if audio_val:
