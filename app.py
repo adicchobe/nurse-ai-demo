@@ -5,37 +5,36 @@ import os
 import json
 import io
 
-# --- 1. CONFIGURATION & STYLE ---
+# --- 1. CONFIGURATION ---
 st.set_page_config(page_title="CareLingo", page_icon="🩺", layout="centered")
 
-# Minimal, Safe CSS for Dark Mode & Clean Look
+# Custom CSS (Kept the Apple Look, but safe)
 st.markdown("""
 <style>
-    /* Force simple white text for headers in Dark Mode */
-    h1, h2, h3 {
-        color: #FFFFFF !important;
-    }
+    /* Global Fonts & Colors */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+    h1, h2, h3, h4 { color: #FFFFFF !important; }
     
-    /* Hide the annoying 'Press Enter to apply' text */
-    div[data-testid="InputInstructions"] > span {
-        display: none;
-    }
-    
-    /* Scenario Cards Styling */
+    /* Scenario Cards */
     .scenario-card {
         background-color: #1E293B;
         padding: 1rem;
-        border-radius: 10px;
+        border-radius: 12px;
         border: 1px solid #334155;
         text-align: center;
         margin-bottom: 10px;
     }
     
-    /* Clean up buttons */
+    /* Hide the 'Press Enter' hint */
+    div[data-testid="InputInstructions"] > span { display: none; }
+    
+    /* Make buttons look clickable */
     .stButton button {
         width: 100%;
         font-weight: 600;
         border-radius: 8px;
+        border: 1px solid #475569;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -53,35 +52,22 @@ if "APP_PASSWORD" in st.secrets:
     
     if not st.session_state.authenticated:
         st.markdown("<h1 style='text-align: center;'>🔒 Login</h1>", unsafe_allow_html=True)
-        
-        # Using a Form forces the button to align perfectly with the input
-        with st.form("login_form"):
-            user_pwd = st.text_input("Enter Access Password", type="password")
-            submitted = st.form_submit_button("Login")
-            
-            if submitted:
-                if user_pwd == st.secrets["APP_PASSWORD"]:
+        with st.form("login"):
+            pwd = st.text_input("Password", type="password")
+            if st.form_submit_button("Enter"):
+                if pwd == st.secrets["APP_PASSWORD"]:
                     st.session_state.authenticated = True
                     st.rerun()
                 else:
-                    st.error("Incorrect Password")
+                    st.error("Incorrect.")
         st.stop()
 
-# --- 3. RELIABLE MODEL CONNECTION ---
-# No complex logic. Just connect to the one that works.
+# --- 3. MODEL CONNECTION ---
 @st.cache_resource
 def load_model():
-    # Try the standard flash model first
-    try:
-        return genai.GenerativeModel("gemini-1.5-flash")
-    except:
-        return None
+    return genai.GenerativeModel("gemini-1.5-flash")
 
 model = load_model()
-
-if not model:
-    st.error("⚠️ Connection Error. Please refresh the page.")
-    st.stop()
 
 # --- 4. SESSION STATE ---
 if "messages" not in st.session_state: st.session_state.messages = []
@@ -91,44 +77,25 @@ if "last_audio_id" not in st.session_state: st.session_state.last_audio_id = Non
 
 # --- 5. SCENARIOS ---
 SCENARIOS = {
-    "Admission": {
-        "title": "Patient Admission",
-        "desc": "Collect history from an anxious patient.",
-        "role": "You are Herr Müller. Anxious, speaks only German.",
-        "goal": "Collect patient history.",
-        "icon": "📋"
-    },
-    "Medication": {
-        "title": "Medication Refusal",
-        "desc": "Convince a patient to take pills.",
-        "role": "You are Frau Schneider. You refuse pills.",
-        "goal": "Explain necessity.",
-        "icon": "💊"
-    },
-    "Emergency": {
-        "title": "Emergency Triage",
-        "desc": "Handle a collapsed visitor scenario.",
-        "role": "You are a visitor whose husband collapsed.",
-        "goal": "Get vitals fast.",
-        "icon": "🚨"
-    }
+    "Admission": {"icon": "📋", "title": "Admission", "role": "Herr Müller (Anxious Patient)", "goal": "Get history."},
+    "Medication": {"icon": "💊", "title": "Medication", "role": "Frau Schneider (Refuses Pills)", "goal": "Explain why."},
+    "Emergency": {"icon": "🚨", "title": "Emergency", "role": "Visitor (Husband Collapsed)", "goal": "Get vitals."}
 }
 
-# --- 6. CORE LOGIC ---
-def transcribe_audio(audio_bytes):
+# --- 6. CORE FUNCTIONS ---
+def process_conversation(audio_bytes, scenario_key):
+    # 1. Transcribe
+    prompt = "Transcribe German audio. Output ONLY text."
     try:
-        prompt = "Transcribe this German audio exactly. Output ONLY the German text."
-        response = model.generate_content([prompt, {"mime_type": "audio/mp3", "data": audio_bytes}])
-        return response.text.strip()
+        resp = model.generate_content([prompt, {"mime_type": "audio/mp3", "data": audio_bytes}])
+        user_text = resp.text.strip()
     except:
-        return None
+        return None, None, None
 
-def get_feedback(user_text, scenario_key):
+    # 2. Analyze
     scen = SCENARIOS[scenario_key]
-    system_prompt = f"""
-    Act as a German tutor. Role: {scen['role']}. Goal: {scen['goal']}.
-    1. Reply naturally in German (Short).
-    2. Analyze user's German.
+    analysis_prompt = f"""
+    Act as German Tutor. Role: {scen['role']}. Goal: {scen['goal']}.
     Output JSON: {{
         "response_text": "German reply",
         "feedback": {{
@@ -138,110 +105,106 @@ def get_feedback(user_text, scenario_key):
     }}
     """
     try:
-        res = model.generate_content(f"{system_prompt}\nUser: {user_text}", generation_config={"response_mime_type": "application/json"})
-        return json.loads(res.text)
+        res = model.generate_content(f"{analysis_prompt}\nUser: {user_text}", generation_config={"response_mime_type": "application/json"})
+        data = json.loads(res.text)
+        
+        # 3. Audio Reply
+        tts = gTTS(text=data["response_text"], lang='de')
+        mp3 = io.BytesIO()
+        tts.write_to_fp(mp3)
+        mp3.seek(0)
+        
+        return user_text, data, mp3
     except:
-        return None
-
-def text_to_speech(text):
-    try:
-        tts = gTTS(text=text, lang='de')
-        buf = io.BytesIO()
-        tts.write_to_fp(buf)
-        buf.seek(0)
-        return buf
-    except:
-        return None
+        return user_text, None, None
 
 # --- 7. MAIN UI ---
 st.title("🩺 CareLingo")
 
+# SCENARIO SELECTION
 if not st.session_state.scenario:
-    st.subheader("Select a scenario to practice")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.markdown(f"<div style='font-size:3rem; text-align:center;'>{SCENARIOS['Admission']['icon']}</div>", unsafe_allow_html=True)
-        if st.button("Admission"):
+    st.subheader("Select Scenario:")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button(f"{SCENARIOS['Admission']['icon']} Admission"):
             st.session_state.scenario = "Admission"
             st.rerun()
-        st.caption(SCENARIOS['Admission']['desc'])
-
-    with col2:
-        st.markdown(f"<div style='font-size:3rem; text-align:center;'>{SCENARIOS['Medication']['icon']}</div>", unsafe_allow_html=True)
-        if st.button("Medication"):
+    with c2:
+        if st.button(f"{SCENARIOS['Medication']['icon']} Medication"):
             st.session_state.scenario = "Medication"
             st.rerun()
-        st.caption(SCENARIOS['Medication']['desc'])
-
-    with col3:
-        st.markdown(f"<div style='font-size:3rem; text-align:center;'>{SCENARIOS['Emergency']['icon']}</div>", unsafe_allow_html=True)
-        if st.button("Emergency"):
+    with c3:
+        if st.button(f"{SCENARIOS['Emergency']['icon']} Emergency"):
             st.session_state.scenario = "Emergency"
             st.rerun()
-        st.caption(SCENARIOS['Emergency']['desc'])
 
+# ACTIVE PRACTICE
 else:
-    # Top Bar
     curr = SCENARIOS[st.session_state.scenario]
-    c1, c2 = st.columns([1, 4])
-    with c1:
+    
+    # Header
+    col_a, col_b = st.columns([1, 4])
+    with col_a:
         if st.button("← Back"):
             st.session_state.scenario = None
             st.session_state.messages = []
             st.session_state.feedback = None
             st.rerun()
-    with c2:
-        st.markdown(f"### {curr['icon']} {curr['title']}")
+    with col_b:
+        st.markdown(f"### {curr['title']}")
+        st.caption(f"Role: Nurse | Goal: {curr['goal']}")
     
     st.divider()
 
-    # Chat
+    # Chat History
     for msg in st.session_state.messages:
-        with st.chat_message(msg["role"], avatar="👤" if msg["role"]=="user" else "🤖"):
+        with st.chat_message(msg["role"]):
             st.write(msg["content"])
-    
-    # Feedback Card
+            
+    # Feedback Display
     if st.session_state.feedback:
         f = st.session_state.feedback
-        st.info("📊 **Teacher's Analysis**")
-        
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Grammar", f"{f.get('grammar',0)}/10")
-        c2.metric("Politeness", f"{f.get('politeness',0)}/10")
-        c3.metric("Medical", f"{f.get('medical',0)}/10")
-        
-        st.warning(f"💡 **Tip:** {f.get('critique', 'N/A')}")
-        st.success(f"🗣️ **Better:** \"{f.get('better_phrase', 'N/A')}\"")
-        
-        if st.button("🔄 Redo Last Turn"):
-            if len(st.session_state.messages) >= 2:
-                st.session_state.messages.pop()
-                st.session_state.messages.pop()
-                st.session_state.feedback = None
-                st.rerun()
+        with st.expander("📊 Teacher's Feedback", expanded=True):
+            cols = st.columns(3)
+            cols[0].metric("Grammar", f"{f.get('grammar',0)}/10")
+            cols[1].metric("Politeness", f"{f.get('politeness',0)}/10")
+            cols[2].metric("Medical", f"{f.get('medical',0)}/10")
+            st.info(f"💡 {f.get('critique', '')}")
+            st.success(f"🗣️ Better: \"{f.get('better_phrase', '')}\"")
 
-    # Audio Input
-    st.markdown("###")
-    audio = st.audio_input("Tap to Speak...")
+    # INPUT AREA
+    st.markdown("---")
+    st.caption("👇 Tap microphone. Recording sends automatically when you click Done.")
     
+    # The Audio Input
+    audio = st.audio_input("Record Response", label_visibility="collapsed")
+    
+    # PROCESS LOGIC
     if audio:
-        bytes_data = audio.read()
-        aid = hash(bytes_data)
-        if aid != st.session_state.last_audio_id:
-            st.session_state.last_audio_id = aid
+        # Check if this is new audio
+        file_id = hash(audio.getvalue())
+        if file_id != st.session_state.last_audio_id:
+            st.session_state.last_audio_id = file_id
             
-            with st.spinner("Listening..."):
-                txt = transcribe_audio(bytes_data)
+            # SHOW STATUS (The UX Fix)
+            status = st.status("✅ Audio captured! Processing...", expanded=True)
             
-            if txt:
-                st.session_state.messages.append({"role": "user", "content": txt})
-                with st.spinner("Thinking..."):
-                    data = get_feedback(txt, st.session_state.scenario)
-                    if data:
-                        st.session_state.feedback = data["feedback"]
-                        st.session_state.messages.append({"role": "assistant", "content": data["response_text"]})
-                        mp3 = text_to_speech(data["response_text"])
-                        if mp3: st.audio(mp3, format="audio/mp3", autoplay=True)
+            status.write("📝 Transcribing...")
+            user_text, ai_data, audio_reply = process_conversation(audio.read(), st.session_state.scenario)
+            
+            if user_text and ai_data:
+                status.write("🧠 Analyzing...")
+                # Update State
+                st.session_state.messages.append({"role": "user", "content": user_text})
+                st.session_state.feedback = ai_data["feedback"]
+                st.session_state.messages.append({"role": "assistant", "content": ai_data["response_text"]})
+                
+                status.update(label="Complete!", state="complete", expanded=False)
+                
+                # Auto-play audio
+                if audio_reply:
+                    st.audio(audio_reply, format="audio/mp3", autoplay=True)
+                
                 st.rerun()
+            else:
+                status.update(label="Error connecting to AI", state="error")
