@@ -60,7 +60,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. AUTHENTICATION ---
+# --- 3. AUTHENTICATION (Fixed with Form for "Enter" key support) ---
 if "GEMINI_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 else:
@@ -73,28 +73,30 @@ if "APP_PASSWORD" in st.secrets:
     
     if not st.session_state.authenticated:
         st.markdown("<br><h1 style='text-align: center;'>🔐 CareLingo Login</h1>", unsafe_allow_html=True)
-        pwd = st.text_input("Password", type="password")
-        # UPDATED: Button text as requested
-        if st.button("Start Practice!"):
-            if pwd == st.secrets["APP_PASSWORD"]:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Access Denied")
+        
+        # FIXED: Using st.form so "Enter" key submits properly
+        with st.form("login_form"):
+            pwd = st.text_input("Password", type="password")
+            submit = st.form_submit_button("Start Practice! 🚀")
+            
+            if submit:
+                if pwd == st.secrets["APP_PASSWORD"]:
+                    st.session_state.authenticated = True
+                    st.rerun()
+                else:
+                    st.error("Access Denied")
         st.stop()
 
-# --- 4. SETTINGS ---
+# --- 4. SETTINGS & MODEL SELECTION ---
 st.title("🩺 CareLingo")
 
 with st.expander("⚙️ System Settings", expanded=False):
     c1, c2 = st.columns([3, 1])
     with c1:
-        # UPDATED: Model list based on your Billing Screenshot
+        # STRICT LIST: Removed broken '3-flash'. Prioritized 'Lite' (Green Bar).
         model_choice = st.selectbox("Active AI Brain:", [
-            "gemini-2.5-flash-lite", # Best Available (Green in screenshot)
-            "gemini-3-flash",        # High Performance (Green in screenshot)
-            "gemini-2.0-flash-exp",  # Reliable Backup
-            "gemini-2.5-flash",      # (Red in screenshot - keep as fallback)
+            "gemini-2.5-flash-lite", # ✅ Best available (Green in screenshot)
+            "gemini-2.0-flash-exp",  # ✅ Reliable Backup
             "gemini-1.5-flash"       # Standard
         ])
     with c2:
